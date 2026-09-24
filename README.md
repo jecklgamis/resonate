@@ -14,10 +14,10 @@ engine as a Go library.
 > configured to — treat it as trusted input, like a shell script. See
 > [SECURITY.md](SECURITY.md) for reporting a vulnerability.
 
-**See [`docs/`](docs)** for the full guide — install, usage, the scenario
-YAML schema, execution models, reports, the Go library, and a generated
-CLI flag reference. Browsable as plain Markdown here on GitHub, or
-served locally with `docsify serve docs`.
+**See the [full guide](https://jecklgamis.github.io/resonate/)** —
+install, usage, the scenario YAML schema, execution models, reports, the
+Go library, and a generated CLI flag reference. Also browsable as plain
+Markdown in [`docs/`](docs), or served locally with `docsify serve docs`.
 
 ## Install
 
