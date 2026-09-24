@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{.Title}} — resonate report</title>
+<style>
+  :root {
+    --bg: #f8f8fc; --panel: #ffffff; --border: #e6e6f0;
+    --text: #3a3d4d; --muted: #9497a8;
+    --ok-bg: #bfe8d4; --ok-fg: #2f8f63;
+    --fail-bg: #f7c6ca; --fail-fg: #c95c63;
+    --accent-bg: #c3d9f7; --accent-fg: #5b7fb5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 24px 64px;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 28px; font-size: 13px; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 36px 0 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .kpi .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  .kpi .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+  .kpi .value.ok { color: var(--ok-fg); }
+  .kpi .value.fail { color: var(--fail-fg); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .chart { width: 100%; height: auto; display: block; }
+  .grid { stroke: var(--border); stroke-width: 1; }
+  .axis { fill: var(--muted); font-size: 10px; }
+  .bar-success { fill: var(--ok-bg); }
+  .bar-fail { fill: var(--fail-bg); }
+  .bar-hist { fill: var(--accent-bg); }
+  .empty { color: var(--muted); font-style: italic; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge.pass { background: var(--ok-bg); color: var(--ok-fg); }
+  .badge.fail { background: var(--fail-bg); color: var(--fail-fg); }
+  .legend { display: flex; gap: 18px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .legend .l-success::before { background: var(--ok-bg); }
+  .legend .l-fail::before { background: var(--fail-bg); }
+  footer { margin-top: 40px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{.Title}}</h1>
+  <p class="subtitle">Generated {{.GeneratedAt}} · resonate load test report</p>
+
+  <div class="kpis">
+    <div class="kpi">
+      <div class="label">Requests</div>
+      <div class="value">{{.S.Requests}}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Success rate</div>
+      <div class="value {{if ge .S.SuccessRate 0.99}}ok{{else if lt .S.SuccessRate 0.95}}fail{{end}}">{{printf "%.1f%%" (mul100 .S.SuccessRate)}}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Throughput</div>
+      <div class="value">{{printf "%.1f" .S.Rate}}<span style="font-size:13px;color:var(--muted)">/s</span></div>
+    </div>
+    <div class="kpi">
+      <div class="label">Duration</div>
+      <div class="value">{{roundMs .S.Duration}}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">p95 latency</div>
+      <div class="value">{{roundUs .S.Latencies.P95}}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Bytes in / out</div>
+      <div class="value" style="font-size:16px">{{.S.BytesIn}} / {{.S.BytesOut}}</div>
+    </div>
+  </div>
+
+  {{if .AssertionResults}}
+  <h2>Assertions</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Metric</th><th>Result</th><th>Detail</th></tr></thead>
+      <tbody>
+      {{range .AssertionResults}}
+        <tr>
+          <td>{{.Metric}}</td>
+          <td>{{if .Passed}}<span class="badge pass">PASS</span>{{else}}<span class="badge fail">FAIL</span>{{end}}</td>
+          <td>{{.Detail}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+
+  <h2>Requests over time</h2>
+  <div class="panel">
+    {{.ThroughputChart}}
+    <div class="legend"><span class="l-success">Success</span><span class="l-fail">Failed</span></div>
+  </div>
+
+  <h2>Response time distribution</h2>
+  <div class="panel">
+    {{.HistogramChart}}
+  </div>
+
+  <h2>Latency</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Min</th><th>Mean</th><th>p50</th><th>p90</th><th>p95</th><th>p99</th><th>Max</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>{{roundUs .S.Latencies.Min}}</td>
+          <td>{{roundUs .S.Latencies.Mean}}</td>
+          <td>{{roundUs .S.Latencies.P50}}</td>
+          <td>{{roundUs .S.Latencies.P90}}</td>
+          <td>{{roundUs .S.Latencies.P95}}</td>
+          <td>{{roundUs .S.Latencies.P99}}</td>
+          <td>{{roundUs .S.Latencies.Max}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {{if .StatusCodes}}
+  <h2>Status codes</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Code</th><th class="num">Count</th></tr></thead>
+      <tbody>
+      {{range .StatusCodes}}
+        <tr><td>{{.Code}}</td><td class="num">{{.Count}}</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+
+  {{if .Errors}}
+  <h2>Errors</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Message</th><th class="num">Count</th></tr></thead>
+      <tbody>
+      {{range .Errors}}
+        <tr><td>{{.Message}}</td><td class="num">{{.Count}}</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+
+  <footer>Generated by resonate — no external assets; this file is self-contained.</footer>
+</div>
+</body>
+</html>

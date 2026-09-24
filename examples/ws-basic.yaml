@@ -1,0 +1,23 @@
+protocol: ws
+
+load:
+  duration: 5s
+  rate: 10
+  workers: 5
+
+ws:
+  timeout: 5s
+  url: ws://localhost:8080/socket
+
+  identities:
+    - token: abc123
+    - token: def456
+
+  messages:
+    - body: '{"type":"subscribe","channel":"orders"}'
+      wait: true
+      extract:
+        session_id: json:session_id
+
+    - body: '{"type":"ping","session":"{{.Vars.session_id}}"}'
+      wait: true

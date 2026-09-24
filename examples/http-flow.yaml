@@ -1,0 +1,46 @@
+protocol: http
+
+load:
+  duration: 5s
+  rate: 5      # iterations/sec (each iteration = the full flow below)
+  workers: 10  # concurrent virtual users
+
+http:
+  timeout: 5s
+
+  # One identity per virtual user, assigned round-robin and sticky for the
+  # worker's lifetime — every request that worker makes uses the same
+  # account/token.
+  identities:
+    - username: alice
+      account_id: "1001"
+    - username: bob
+      account_id: "1002"
+    - username: carol
+      account_id: "1003"
+
+  # Runs once per worker, before its first iteration. Assumes a login
+  # endpoint that returns {"token": "..."}.
+  setup:
+    - method: POST
+      url: http://localhost:8080/login
+      body: '{"username": "{{.Identity.username}}"}'
+      extract:
+        token: json:token
+
+  # Runs every iteration, in order. Step 2 uses the order_id extracted from
+  # step 1's response — this is the response-chaining part.
+  flow:
+    - method: POST
+      url: http://localhost:8080/orders
+      headers:
+        Authorization: "Bearer {{.Vars.token}}"
+        Content-Type: application/json
+      body: '{"account_id": "{{.Identity.account_id}}", "item": "widget", "qty": {{randInt 1 5}}}'
+      extract:
+        order_id: json:id
+
+    - method: GET
+      url: "http://localhost:8080/orders/{{.Vars.order_id}}"
+      headers:
+        Authorization: "Bearer {{.Vars.token}}"

@@ -1,0 +1,22 @@
+protocol: http
+
+load:
+  stages:
+    # Ramp up: 0 -> 50 workers, 0 -> 50 iterations/sec, over 30s.
+    - duration: 30s
+      workers: 50
+      rate: 50
+    # Steady state: hold 50 workers / 50 iterations/sec for 2 minutes.
+    - duration: 2m
+      workers: 50
+      rate: 50
+    # Ramp down to 0 over 15s.
+    - duration: 15s
+      workers: 0
+      rate: 0
+
+http:
+  timeout: 5s
+  targets:
+    - method: GET
+      url: http://localhost:8080/health

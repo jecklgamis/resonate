@@ -1,0 +1,17 @@
+protocol: http
+
+load:
+  duration: 3s
+  rate: 10
+  workers: 5
+
+http:
+  timeout: 5s
+  feeder:
+    file: examples/data/users.csv
+    mode: sequential # "sequential" (default), "random", or "stream" (for a file too large to fit in memory)
+  targets:
+    - method: POST
+      url: "http://localhost:8080/login"
+      body: |
+        {"email": "{{.Feeder.email}}", "password": "{{.Feeder.password}}"}

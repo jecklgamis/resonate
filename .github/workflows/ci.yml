@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt check
+        run: make fmt-check
+
+      - name: go vet
+        run: make vet
+
+      - name: go build
+        run: make build
+
+      - name: go test -race
+        run: go test ./... -race
+
+      - name: docs up to date
+        run: make docs-check

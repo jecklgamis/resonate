@@ -1,0 +1,30 @@
+protocol: http
+
+load:
+  duration: 3s
+  rate: 10
+  workers: 5
+
+http:
+  timeout: 5s
+  targets:
+    # A 404 here is the expected/correct behavior for a not-found check --
+    # without expect_status, resonate would otherwise count every one of
+    # these as a failure.
+    - method: GET
+      url: http://localhost:8080/users/999999
+      expect_status: [404]
+
+    # Only a 201 counts as success for this one -- a 200 (or anything else)
+    # is now a failure, even though it's a 2xx. expect_status, expect_headers,
+    # and expect_body all combine with AND: every one of them must pass.
+    - method: POST
+      url: http://localhost:8080/orders
+      body: '{"item": "widget"}'
+      expect_status: [201]
+      expect_headers:
+        Content-Type: application/json   # exact match
+        X-Request-Id: ""                 # just needs to be present
+      expect_body:
+        "json:status": "created"   # real JSONPath -- exact match
+        "json:id": ""              # just needs to exist in the response

@@ -1,0 +1,20 @@
+protocol: http
+
+load:
+  duration: 3s
+  rate: 10
+  workers: 5
+
+http:
+  timeout: 5s
+  targets:
+    - method: POST
+      url: "http://localhost:8080/anything/{{randInt 1 1000}}"
+      query:
+        seq: "{{.Seq}}"
+        ts: "{{now \"unix\"}}"
+      headers:
+        Content-Type: application/json
+        X-Request-Id: "{{uuid}}"
+      body: |
+        {"order_id": {{.Seq}}, "customer": "{{randChoice "alice" "bob" "carol"}}", "amount": {{randFloat 5 500}}}

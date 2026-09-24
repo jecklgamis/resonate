@@ -1,0 +1,32 @@
+protocol: http
+
+load:
+  duration: 30s
+  workers: 20
+  rate: 50
+  iterations: 10   # each virtual user makes 10 requests, then a fresh one (new identity) takes its place
+
+http:
+  timeout: 5s
+
+  identities:
+    - username: alice
+    - username: bob
+    - username: carol
+    - username: dave
+    - username: erin
+    - username: frank
+
+  # Re-run independently for every new virtual user, not just once overall.
+  setup:
+    - method: POST
+      url: http://localhost:8080/login
+      body: '{"username": "{{.Identity.username}}"}'
+      extract:
+        token: json:token
+
+  flow:
+    - method: GET
+      url: http://localhost:8080/orders
+      headers:
+        Authorization: "Bearer {{.Vars.token}}"

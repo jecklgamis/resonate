@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*" # e.g. v1.0.0-alpha.1, v1.2.3
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          out="resonate"
+          if [ "$GOOS" = "windows" ]; then out="resonate.exe"; fi
+          go build -trimpath -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o "$out" ./cmd/resonate
+
+      - name: Package
+        id: package
+        run: |
+          name="resonate_${{ github.ref_name }}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          mkdir "$name"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            mv resonate.exe "$name/"
+          else
+            mv resonate "$name/"
+          fi
+          cp README.md LICENSE "$name/"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip -r "$name.zip" "$name"
+            echo "asset=$name.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar -czf "$name.tar.gz" "$name"
+            echo "asset=$name.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.asset }}
+          path: ${{ steps.package.outputs.asset }}
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
+
+      - name: Determine prerelease status
+        id: prerelease
+        run: |
+          if [[ "${{ github.ref_name }}" == *-* ]]; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          prerelease: ${{ steps.prerelease.outputs.value }}
+          files: dist/*
+          generate_release_notes: true

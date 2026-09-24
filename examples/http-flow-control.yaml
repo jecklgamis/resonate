@@ -1,0 +1,48 @@
+protocol: http
+
+load:
+  duration: 10s
+  rate: 2      # iterations/sec (each iteration = the full flow below)
+  workers: 5   # concurrent virtual users
+
+http:
+  timeout: 5s
+
+  # Runs every iteration, in order. Demonstrates pause (think-time) and
+  # every control-flow block: repeat, during, and if.
+  flow:
+    - method: GET
+      url: http://localhost:8080/login
+      extract:
+        role: json:role
+
+    # pause: sleeps this long before the request; pause_max (optional,
+    # must be >= pause) makes it a random duration in [pause, pause_max)
+    # instead of a fixed one — simulates a user reading the page.
+    - method: GET
+      url: http://localhost:8080/dashboard
+      pause: 200ms
+      pause_max: 500ms
+
+    # repeat: runs the nested steps this many times in a row — e.g.
+    # polling a status endpoint a fixed number of times.
+    - repeat: 3
+      steps:
+        - method: GET
+          url: http://localhost:8080/notifications
+          pause: 100ms
+
+    # during: runs the nested steps repeatedly for this long, instead of a
+    # fixed count.
+    - during: 1s
+      steps:
+        - method: GET
+          url: http://localhost:8080/ping
+          pause: 200ms
+
+    # if: only runs the nested steps when the condition — a template with
+    # {{.Vars.*}} available — renders "true" or "1".
+    - if: '{{eq .Vars.role "admin"}}'
+      steps:
+        - method: GET
+          url: http://localhost:8080/admin

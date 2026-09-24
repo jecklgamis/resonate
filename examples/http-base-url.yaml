@@ -1,0 +1,21 @@
+protocol: http
+
+load:
+  duration: 3s
+  rate: 20
+  workers: 5
+
+http:
+  timeout: 5s
+
+  # Prepended to any target/flow/setup url that starts with "/" -- so
+  # every entry below only needs a path, not the full host. A url that's
+  # already absolute (or a {{ }} template) is left untouched.
+  base_url: http://localhost:8080
+
+  targets:
+    - method: GET
+      url: /health
+    - method: POST
+      url: /orders
+      body: '{"item_id": {{randInt 1 100}}}'

@@ -1,0 +1,7 @@
+/bin/
+.idea/
+/report.html
+/report.json
+/node_modules/
+/package.json
+/package-lock.json

@@ -1,0 +1,14 @@
+protocol: http
+
+load:
+  duration: 3s
+  rate: 20
+  workers: 5
+
+http:
+  timeout: 5s
+  targets:
+    - method: GET
+      url: http://localhost:8080/get
+      headers:
+        User-Agent: resonate-load-gen

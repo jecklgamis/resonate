@@ -1,0 +1,38 @@
+protocol: http
+
+load:
+  duration: 10s
+  rate: 50
+  workers: 20
+
+http:
+  timeout: 5s
+  targets:
+    - method: GET
+      url: http://localhost:8080/health
+
+# If any of these fail, resonate run still prints the report, then the
+# failures, then exits non-zero -- e.g. `resonate run scenario.yaml || exit 1`
+# in a CI pipeline. Beyond min/max (gte/lte), the full condition set
+# (gt/lt/is/in/around/deviatesAround) is supported -- see
+# docs/scenarios.md's "Assertions" section.
+assertions:
+  - metric: success_rate
+    min: "0.99"
+
+  - metric: latency_p95
+    max: 500ms
+
+  - metric: rate
+    min: "40"
+
+  - metric: success
+    gt: "0"                   # strict: at least one successful request, not just ">= 0"
+
+  - metric: latency_mean
+    around: "200ms"
+    around_margin: "50ms"     # within 150ms-250ms inclusive
+
+  - metric: rate
+    deviates_around: "50"
+    deviates_percent: "20"    # within +/-20% of the target rate
