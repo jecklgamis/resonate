@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func writeTempDataFile(t *testing.T, name, content string) string {
@@ -292,5 +293,55 @@ func TestNewFeederStreamInvalidModeStillRejected(t *testing.T) {
 	path := writeTempDataFile(t, "users.csv", "email\na@example.com\n")
 	if _, err := NewFeeder(path, "streaming"); err == nil {
 		t.Fatal("expected an error for a mode that's close to, but not exactly, \"stream\"")
+	}
+}
+
+// openWithRetry is exercised directly (rather than through the full
+// streamFeeder.run goroutine) so the retry-until-success and
+// stop-during-backoff branches can be triggered deterministically instead
+// of racing the background reader's own eager reopen-on-EOF.
+
+func TestStreamFeederOpenWithRetryRetriesUntilFileAppears(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "users.csv")
+	sf := &streamFeeder{stop: make(chan struct{})}
+
+	done := make(chan *rowSource, 1)
+	go func() { done <- sf.openWithRetry(path, ".csv") }()
+
+	// Let at least one attempt fail and enter the backoff wait before the
+	// file appears.
+	time.Sleep(streamReopenBackoff / 2)
+	if err := os.WriteFile(path, []byte("email\nalice@example.com\n"), 0o644); err != nil {
+		t.Fatalf("writing file: %v", err)
+	}
+
+	select {
+	case src := <-done:
+		if src == nil {
+			t.Fatal("openWithRetry returned nil, want a rowSource once the file appears")
+		}
+		src.close()
+	case <-time.After(2 * time.Second):
+		t.Fatal("openWithRetry did not return after the file was created")
+	}
+}
+
+func TestStreamFeederOpenWithRetryReturnsNilWhenStopped(t *testing.T) {
+	sf := &streamFeeder{stop: make(chan struct{})}
+
+	done := make(chan *rowSource, 1)
+	go func() { done <- sf.openWithRetry("/nonexistent/path/does-not-exist.csv", ".csv") }()
+
+	// Let it enter the backoff wait before closing stop.
+	time.Sleep(streamReopenBackoff / 2)
+	close(sf.stop)
+
+	select {
+	case src := <-done:
+		if src != nil {
+			t.Fatal("openWithRetry returned a non-nil rowSource, want nil once stop is closed")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("openWithRetry did not return after stop was closed")
 	}
 }

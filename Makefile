@@ -18,6 +18,11 @@ run: build
 test:
 	go test ./...
 
+.PHONY: coverage
+coverage:
+	go test ./... -race -covermode=atomic -coverprofile=coverage.out
+	go tool cover -func=coverage.out | tail -1
+
 .PHONY: vet
 vet:
 	go vet ./...
@@ -69,6 +74,7 @@ help:
 	@echo "  install     go install the CLI onto \$$GOBIN/\$$GOPATH/bin"
 	@echo "  run         build and run, e.g. make run ARGS='hit https://example.com --duration 5s'"
 	@echo "  test        go test ./..."
+	@echo "  coverage    go test ./... -race with coverage; writes coverage.out and prints the total"
 	@echo "  vet         go vet ./..."
 	@echo "  fmt         gofmt -w ."
 	@echo "  fmt-check   fail if any file needs gofmt"
