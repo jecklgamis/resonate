@@ -10,8 +10,8 @@ scenarios.
 This site covers **installing and using** resonate. For building/testing
 the project itself, see
 [CONTRIBUTING.md](https://github.com/jecklgamis/resonate/blob/main/CONTRIBUTING.md);
-for the repo's own top-level overview, see the
-[repo's README](https://github.com/jecklgamis/resonate#readme).
+for the repo's top-level overview, see its
+[README](https://github.com/jecklgamis/resonate#readme).
 
 ## Features
 

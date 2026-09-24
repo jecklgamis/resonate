@@ -14,13 +14,12 @@ JSON instead of text — handy for piping into `jq` or another tool.
 ## HTML Report
 
 `report.html`, written to the current directory by default. A single
-self-contained file — inline CSS, inline SVG charts, no external
-stylesheets/scripts/CDNs — so it opens standalone and can be
-attached/emailed/archived as-is. Includes KPI cards, a requests-over-time
-chart, a response-time distribution histogram, the latency percentile
-table, status code/error breakdowns, and (for `resonate run` scenarios
-with `assertions`) a pass/fail table. Change the path with
-`--html-report`, or pass `""` to disable it.
+self-contained file (inline CSS/SVG, no external assets) — opens
+standalone, attachable/emailable/archivable as-is. Includes KPI cards, a
+requests-over-time chart, a response-time histogram, the latency
+percentile table, status/error breakdowns, and (for `resonate run` with
+`assertions`) a pass/fail table. Change the path with `--html-report`,
+or pass `""` to disable it.
 
 ## JSON Report
 
@@ -33,12 +32,11 @@ pass `""` to disable it. Independent of `--json`, which only controls the
 
 ## Raw Results (JSON Lines)
 
-`results.jsonl`, written to the current directory by default alongside
-the other reports — one JSON object per individual request, as it
-completes, instead of just the aggregated summary. A raw dump for offline
-reprocessing (custom percentiles, diffing two runs, your own tooling)
-without re-running the load test. Change the path with `--results-file`,
-or pass `""` to disable it — it can get large on a high-volume run.
+`results.jsonl`, written alongside the other reports — one JSON object
+per request, as it completes, instead of just the aggregate. For offline
+reprocessing (custom percentiles, diffing runs) without re-running the
+test. Change the path with `--results-file`, or pass `""` to disable it
+— it can get large on a high-volume run.
 
 Each line looks like:
 

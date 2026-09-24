@@ -56,16 +56,14 @@ need, but only `--max-idle-conns`/`http.max_idle_conns` of them (default
 100) are kept open *idle* for reuse — beyond that, a connection is closed
 right after its one request instead of kept warm.
 
-That default becomes a real trap once `--max-workers` is raised past it: a
-high-concurrency open-model run with, say, `--max-workers 1000` but
+That default becomes a real trap once `--max-workers` is raised past it:
+a high-concurrency run with, say, `--max-workers 1000` but
 `--max-idle-conns` left at 100 spends time re-dialing (TCP, plus TLS if
-HTTPS) most connections instead of reusing them — inflating tail latency
-and reducing achieved rate for reasons that have nothing to do with the
-target's actual capacity. Raise `--max-idle-conns`/`http.max_idle_conns`
-to at least match `--max-workers`/`load.max_workers` any time you push
-concurrency up, or you're partly measuring resonate's own connection
-churn instead of the target's real capacity. Measured on a 10k rps run,
-identical everything else except `--max-idle-conns`: 7.3k/s achieved +
+HTTPS) most connections — inflating tail latency and reducing achieved
+rate for reasons that have nothing to do with the target's capacity.
+Raise `--max-idle-conns`/`http.max_idle_conns` to at least match
+`--max-workers`/`load.max_workers` any time you push concurrency up.
+Measured on a 10k rps run, identical everything else: 7.3k/s achieved +
 p99 1.46s at the default 100 idle conns, vs. 10.4k/s achieved + p99 736ms
 at `--max-idle-conns 1000`.
 
@@ -99,9 +97,8 @@ load:
       rate: 100       # ramping-arrival-rate: hold 100/s, concurrency free to grow past 20 up to max_workers
 ```
 
-This avoids slamming a service with instant full load the moment the test
-starts — the same problem staged/ramped load-injection profiles solve.
-`stages` is only available via scenario files, not `resonate hit`. See
+This avoids slamming a service with instant full load. `stages` is only
+available via scenario files, not `resonate hit`. See
 [`examples/http-stages.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-stages.yaml).
 
 ## Virtual User Lifecycle

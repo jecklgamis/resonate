@@ -7,18 +7,15 @@ see [Execution Models](execution-models.md) for the `load:` block
 (`rate`, `workers`, `stages`, `iterations`).
 
 > **Treat a scenario file as trusted input, like a shell script.**
-> `body_file`/`raw_body_file`/`feeder.file` read whatever local path they
-> name and send its contents to whatever URL the scenario specifies, and
-> the `env "VAR_NAME"` template function can put an environment variable's
-> value into a request. Only run a scenario file (or `resonate hit`
-> invocation) from a source you trust — the same rule you'd apply to a
-> `Makefile` or CI config, not to a passive data file.
+> `body_file`/`raw_body_file`/`feeder.file` read a local path and send its
+> contents wherever the scenario specifies, and `env "VAR_NAME"` can put
+> an environment variable into a request. Only run a scenario file (or
+> `resonate hit` invocation) from a source you trust.
 
 ## Independent Targets
 
 `http.targets`: independent, stateless requests, round-robin per
-iteration — no state carried between requests, matching how most REST
-APIs work.
+iteration — no state carried between requests.
 
 ```yaml
 http:
@@ -30,13 +27,12 @@ http:
       body: '{"item_id": {{randInt 1 100}}}'
 ```
 
-Any target's status/header/body checks can be overridden with
-`expect_status`/`expect_headers`/`expect_body` — see
+Any target's checks can be overridden with `expect_status`/
+`expect_headers`/`expect_body` — see
 [Status, Header, and Body Checks](usage.md#status-header-and-body-checks).
-A body can also come from a file instead of an inline string: `body_file`
-(templated, like `body`) or `raw_body_file` (sent exactly as-is — for a
-large/binary payload, or one that would otherwise be misread as
-containing `{{ }}` template syntax).
+A body can also come from a file: `body_file` (templated, like `body`) or
+`raw_body_file` (sent exactly as-is — for a large/binary payload, or one
+that would otherwise be misread as containing `{{ }}`).
 
 ### Base URL
 
@@ -54,17 +50,16 @@ http:
 
 A `url` that doesn't start with `/` (already absolute, or a `{{ }}`
 template) is left untouched; a relative `url` with no `base_url` set
-fails fast at construction, the same way a malformed absolute URL would.
-Only `targets`/`flow`/`setup` resolve against `base_url` — `ws` scenarios
-aren't covered by this. See
+fails fast at construction, same as a malformed absolute URL. Only
+`targets`/`flow`/`setup` resolve against `base_url` — `ws` scenarios
+don't. See
 [`examples/http-base-url.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-base-url.yaml).
 
 ## Feeders
 
-`http.feeder`/`ws.feeder` hand out one row of data per iteration from a CSV
-or JSON file — exposed to templates as `{{.Feeder.<column>}}` — instead of
-relying purely on random values, for replaying real-looking data
-(accounts, emails, product ids, ...) or actual exported production data.
+`http.feeder`/`ws.feeder` hand out one row of data per iteration from a
+CSV or JSON file, exposed to templates as `{{.Feeder.<column>}}` — for
+replaying real-looking data instead of pure random values.
 
 ```yaml
 http:
@@ -86,40 +81,37 @@ bob@example.com,hunter3
 ```
 
 Notes:
-- `mode: sequential` (default) hands out rows round-robin, wrapping back
-  to the first row once exhausted; `mode: random` picks a row uniformly
-  at random each time instead. Both load the whole file into memory once,
-  at construction.
-- `mode: stream` is for a file too large to comfortably fit in memory
-  (e.g. an exported production dataset) — reads incrementally in the
-  background instead, holding only a small buffer regardless of file
-  size. Behaves like `sequential` (round-robin, wraps around); there's no
-  streaming `random` yet.
+- `mode: sequential` (default) hands out rows round-robin, wrapping
+  around; `mode: random` picks a row uniformly at random each time. Both
+  load the whole file into memory once, at construction.
+- `mode: stream` is for a file too large to fit in memory — reads
+  incrementally in the background, holding only a small buffer. Behaves
+  like `sequential`; no streaming `random` yet.
 - For `http.flow`, one row is picked per iteration and stays the same
-  across every step in that flow (like `.Identity`); `http.setup` picks
-  its own row once per virtual user.
+  across every step (like `.Identity`); `http.setup` picks its own row
+  once per virtual user.
 - A missing/empty `{{.Feeder.column}}` key renders as `""`, same as
   `{{.Vars.*}}`.
-- Construction fails fast either way (missing file, malformed data, or an
-  empty dataset) before any request is sent.
+- Construction fails fast (missing file, malformed data, empty dataset)
+  before any request is sent.
 
 See [`examples/http-feeder.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-feeder.yaml)
 and [`examples/data/users.csv`](https://github.com/jecklgamis/resonate/blob/main/examples/data/users.csv).
 
 ## Multi-Step Flows and Response Chaining
 
-`http.flow`: an ordered sequence of requests run once per iteration, each
-able to use values extracted from earlier steps' responses
-(`{{.Vars.*}}`). Mutually exclusive with `targets`. Use this when a later
-step needs a value from an earlier step's response (e.g. `POST /orders`
+`http.flow`: an ordered sequence of requests run once per iteration,
+each able to use values extracted from earlier steps' responses
+(`{{.Vars.*}}`). Mutually exclusive with `targets`. Use this when a
+later step needs a value from an earlier step (e.g. `POST /orders`
 returns an id, `GET /orders/{id}` needs it).
 
 ```yaml
 http:
   timeout: 5s
 
-  # One identity per virtual user, assigned round-robin over the pool and
-  # sticky for that worker's lifetime.
+  # One identity per virtual user, assigned round-robin and sticky for
+  # that worker's lifetime.
   identities:
     - username: alice
       account_id: "1001"
@@ -127,8 +119,8 @@ http:
       account_id: "1002"
 
   # Runs once per worker, before its first iteration. Extracted vars seed
-  # {{.Vars.*}} for every iteration that worker runs afterward — "log in
-  # once, reuse the token." Not counted in the report.
+  # {{.Vars.*}} for every iteration afterward — "log in once, reuse the
+  # token." Not counted in the report.
   setup:
     - method: POST
       url: http://localhost:8080/login
@@ -155,19 +147,18 @@ http:
 
 Notes:
 - `extract` rules: `json:<JSONPath>` (real JSONPath, e.g. `json:id`,
-  `json:items[0].id`, a leading `$` is optional), `yaml:<JSONPath>` (the
-  same JSONPath language, against a YAML body), `xml:<XPath>` (real
-  XPath 1.0, e.g. `xml://user/name`, `xml://user/@id`), `regex:<pattern>`
-  (RE2 against the raw body text), `css:<selector>` (a CSS selector
-  against an HTML body), `header:<Name>`, or `status`.
-- If a flow step fails or returns a non-2xx/3xx status, the rest of that
-  iteration's steps are skipped — the flow resumes fresh next iteration.
-  A step can also set `expect_status`/`expect_headers`/`expect_body` to
-  override what counts as success — see
-  [Status, Header, and Body Checks](usage.md#status-header-and-body-checks).
+  `json:items[0].id`, leading `$` optional), `yaml:<JSONPath>` (same
+  language against YAML), `xml:<XPath>` (real XPath 1.0, e.g.
+  `xml://user/name`, `xml://user/@id`), `regex:<pattern>` (RE2 against
+  the raw body), `css:<selector>` (against an HTML body), `header:<Name>`,
+  or `status`.
+- A failed or non-2xx/3xx step skips the rest of that iteration's steps
+  (resuming fresh next iteration). A step can set `expect_status`/
+  `expect_headers`/`expect_body` to override what counts as success —
+  see [Status, Header, and Body Checks](usage.md#status-header-and-body-checks).
 - `identities` is optional; without it, `{{.Identity.*}}` renders empty.
-- `{{.Vars.*}}` for a key that was never extracted renders as `""` rather
-  than erroring.
+- `{{.Vars.*}}` for a never-extracted key renders as `""` rather than
+  erroring.
 
 See [`examples/http-flow.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-flow.yaml).
 
@@ -206,11 +197,10 @@ stops the whole flow, unwinding out of every enclosing block. See
 
 ## WebSocket
 
-`protocol: ws` (scenario files only, not `resonate hit`) dials one
-connection per iteration, sends `ws.messages` in order, then closes it.
-Messages support the same response chaining as `flow`: a message with
-`wait: true` and `extract` makes its response available to later messages
-via `{{.Vars.*}}`.
+`protocol: ws` (scenario files only) dials one connection per iteration,
+sends `ws.messages` in order, then closes it. Messages support the same
+response chaining as `flow`: a message with `wait: true` and `extract`
+makes its response available to later messages via `{{.Vars.*}}`.
 
 ```yaml
 protocol: ws
@@ -241,12 +231,10 @@ See [`examples/ws-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/
 
 ## Assertions
 
-A top-level `assertions:` list checks metrics from the completed run's
-report against thresholds. If any fail, `resonate run` prints the report
-as usual, then the failures, then exits with a non-zero status — for
-gating a CI pipeline on load-test results. `resonate hit` has an
-equivalent, single-expression `--assert 'metric<op>threshold'` flag (e.g.
-`--assert 'success_rate>=0.99'`) covering the same metrics with a simpler
+A top-level `assertions:` list checks metrics from the completed
+report against thresholds. If any fail, `resonate run` prints the
+report, then the failures, then exits non-zero. `resonate hit` has an
+equivalent `--assert 'metric<op>threshold'` flag with a simpler
 operator set — see [Usage](usage.md#assertions).
 
 ```yaml
@@ -262,22 +250,20 @@ assertions:
     max: "60"
 ```
 
-Each entry needs at least one condition; several may be set together,
-combined with AND. Thresholds are duration strings (`"500ms"`) for
-`latency_*` metrics, plain numbers otherwise. Supported metrics:
-`requests`, `success`, `success_rate`, `error_rate`, `rate`,
-`latency_min`, `latency_mean`, `latency_stddev`, `latency_p50`,
-`latency_p90`, `latency_p95`, `latency_p99`, `latency_max`, and
-`latency_p<N>` for any percentile `N` (`0`-`100`, fractional allowed —
-e.g. `latency_p99.9`), not just the four fixed ones.
+Each entry needs at least one condition; several combine with AND.
+Thresholds are duration strings (`"500ms"`) for `latency_*` metrics,
+plain numbers otherwise. Supported metrics: `requests`, `success`,
+`success_rate`, `error_rate`, `rate`, `latency_min`, `latency_mean`,
+`latency_stddev`, `latency_p50`, `latency_p90`, `latency_p95`,
+`latency_p99`, `latency_max`, and `latency_p<N>` for any percentile `N`
+(`0`-`100`, fractional allowed — e.g. `latency_p99.9`).
 
-Beyond `min`/`max` (`gte`/`lte`), the following assertion conditions
-are also supported: `gt`/`lt` (strict inequality), `is` (exact
+Beyond `min`/`max` (`gte`/`lte`): `gt`/`lt` (strict), `is` (exact
 equality), `in` (a list of valid values), `around`/`around_margin`
 (within an absolute margin of a center value), and
-`deviates_around`/`deviates_percent` (within a relative/percentage
-margin of a target value) — the latter two are field pairs, both must be
-set together, and both default to inclusive bounds (`around_exclusive`/
+`deviates_around`/`deviates_percent` (within a relative margin of a
+target value) — the latter two are field pairs, both required together,
+defaulting to inclusive bounds (`around_exclusive`/
 `deviates_exclusive: true` to exclude the boundary).
 
 ```yaml
@@ -298,5 +284,5 @@ assertions:
     deviates_exclusive: true # ...but not exactly at the 5% boundary
 ```
 
-An unknown metric name, or an entry with no condition set at all, is
-rejected at load time — before any request is sent.
+An unknown metric name, or an entry with no condition set, is rejected
+at load time.
