@@ -2,15 +2,19 @@ package resonate_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 
 	"github.com/jecklgamis/resonate"
 )
@@ -415,5 +419,207 @@ func TestScenarioDSLIterations(t *testing.T) {
 	// condition: exactly Workers*Iterations requests, self-terminating.
 	if summary.Requests != 6 {
 		t.Errorf("Requests = %d, want 6 (2 workers * 3 iterations)", summary.Requests)
+	}
+}
+
+func TestScenarioDSLFeeder(t *testing.T) {
+	var gotEmail string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		gotEmail = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "users.csv")
+	if err := os.WriteFile(path, []byte("email\nalice@example.com\n"), 0o644); err != nil {
+		t.Fatalf("writing feeder file: %v", err)
+	}
+
+	summary, err := resonate.NewScenario().
+		Post(srv.URL).
+		Body("{{.Feeder.email}}").
+		Feeder(path, "sequential").
+		Requests(1).
+		Workers(1).
+		Run(context.Background())
+	if err != nil {
+		t.Fatalf("Scenario.Run error: %v", err)
+	}
+	if summary.SuccessRate != 1 {
+		t.Errorf("SuccessRate = %v, want 1", summary.SuccessRate)
+	}
+	if gotEmail != "alice@example.com" {
+		t.Errorf("request body = %q, want alice@example.com", gotEmail)
+	}
+}
+
+func TestScenarioDSLFeederLoadErrorDeferredToBuild(t *testing.T) {
+	_, err := resonate.NewScenario().
+		Get("http://localhost:8080/a").
+		Feeder("/does/not/exist.csv", "sequential").
+		Build()
+	if err == nil {
+		t.Fatal("Build() error = nil, want an error for a missing feeder file")
+	}
+}
+
+func TestScenarioDSLAssertPass(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	summary, err := resonate.NewScenario().
+		Get(srv.URL).
+		Requests(5).
+		Workers(1).
+		Assert(resonate.Assertion{Metric: "success_rate", Min: floatPtr(0.99)}).
+		Run(context.Background())
+	if err != nil {
+		t.Fatalf("Scenario.Run error: %v, want nil (assertion should pass)", err)
+	}
+	if summary.Requests != 5 {
+		t.Errorf("Requests = %d, want 5", summary.Requests)
+	}
+}
+
+func TestScenarioDSLAssertFail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	summary, err := resonate.NewScenario().
+		Get(srv.URL).
+		Requests(5).
+		Workers(1).
+		Assert(resonate.Assertion{Metric: "success_rate", Min: floatPtr(0.99)}).
+		Run(context.Background())
+	if err == nil {
+		t.Fatal("Scenario.Run error = nil, want an error (assertion should fail)")
+	}
+	// The Summary is still returned (not zeroed) even though the assertion failed.
+	if summary.Requests != 5 {
+		t.Errorf("Requests = %d, want 5 (Summary should still be populated on assertion failure)", summary.Requests)
+	}
+}
+
+func TestScenarioDSLAssertUnknownMetricErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := resonate.NewScenario().
+		Get(srv.URL).
+		Requests(1).
+		Workers(1).
+		Assert(resonate.Assertion{Metric: "not_a_real_metric", Min: floatPtr(1)}).
+		Run(context.Background())
+	if err == nil {
+		t.Fatal("Scenario.Run error = nil, want an error for an unknown assertion metric")
+	}
+}
+
+func floatPtr(f float64) *float64 { return &f }
+
+// wsEchoServer accepts a WebSocket connection, records the handshake
+// headers, and echoes every text message back wrapped as {"echo": "<msg>"}
+// — mirrors internal/generator's wsEchoServer, duplicated here since that
+// one is unexported and this test lives in package resonate_test.
+func wsEchoServer(t *testing.T) (*httptest.Server, func() http.Header) {
+	t.Helper()
+	var mu sync.Mutex
+	var gotHeader http.Header
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotHeader = r.Header.Clone()
+		mu.Unlock()
+
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			return
+		}
+		defer conn.CloseNow()
+
+		ctx := r.Context()
+		for {
+			typ, msg, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			resp, _ := json.Marshal(map[string]string{"echo": string(msg)})
+			if err := conn.Write(ctx, typ, resp); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	return srv, func() http.Header {
+		mu.Lock()
+		defer mu.Unlock()
+		return gotHeader
+	}
+}
+
+func wsURL(httpURL string) string {
+	return "ws" + strings.TrimPrefix(httpURL, "http")
+}
+
+func TestScenarioDSLWebSocket(t *testing.T) {
+	srv, getHeader := wsEchoServer(t)
+
+	summary, err := resonate.NewScenario().
+		WS(wsURL(srv.URL)).
+		Header("Authorization", "Bearer {{.Identity.token}}").
+		Identity(map[string]string{"token": "abc123"}).
+		Message(`{"type":"subscribe"}`).
+		Wait().
+		Extract("echoed", "json:echo").
+		Message(`{"type":"ping","prev":"{{.Vars.echoed}}"}`).
+		Wait().
+		ExpectBody("json:echo", `{"type":"ping","prev":"{"type":"subscribe"}"}`).
+		Requests(1).
+		Workers(1).
+		Run(context.Background())
+	if err != nil {
+		t.Fatalf("Scenario.Run error: %v", err)
+	}
+	if summary.SuccessRate != 1 {
+		t.Errorf("SuccessRate = %v, want 1", summary.SuccessRate)
+	}
+	// One connect result + one per message.
+	if summary.Requests != 3 {
+		t.Errorf("Requests = %d, want 3 (1 connect + 2 messages)", summary.Requests)
+	}
+	if got := getHeader().Get("Authorization"); got != "Bearer abc123" {
+		t.Errorf("Authorization header = %q, want %q (from Identity)", got, "Bearer abc123")
+	}
+}
+
+func TestScenarioDSLWebSocketExpectBodyWithoutWaitErrors(t *testing.T) {
+	_, err := resonate.NewScenario().
+		WS("ws://localhost:8080/socket").
+		Message(`{"type":"ping"}`).
+		ExpectBody("json:status", "ok").
+		Build()
+	if err == nil {
+		t.Fatal("Build() error = nil, want an error for ExpectBody without Wait")
+	}
+}
+
+func TestScenarioDSLWebSocketMixedWithTargetErrors(t *testing.T) {
+	_, err := resonate.NewScenario().
+		Get("http://localhost:8080/a").
+		WS("ws://localhost:8080/socket").
+		Message("ping").
+		Wait().
+		Build()
+	if err == nil {
+		t.Fatal("Build() error = nil, want an error for mixing WS and Target")
 	}
 }

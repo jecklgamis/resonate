@@ -116,14 +116,59 @@ Method groups on `Scenario`:
   `PauseRange` (think-time before the current step), `Repeat`/`During`/
   `If`/`End` (control-flow blocks)
 - **Checks** — `ExpectStatus`, `ExpectHeader`, `ExpectBody` (status code,
-  response header, and JSON/YAML/XML/regex/CSS body checks — see
+  response header, and JSON/YAML/XML body checks — see
   [Status, Header, and Body Checks](usage.md#status-header-and-body-checks)
   for the check syntax)
+- **Feeders** — `Feeder(path, mode)` loads a CSV/JSON file and hands out
+  one row per iteration as `{{.Feeder.<column>}}`, same as
+  `http.feeder`/`ws.feeder` in a scenario file — see
+  [Feeders](scenarios.md#feeders). Applies to whichever kind of `Scenario`
+  is being built (HTTP/flow, or the WS connection once `WS` has been
+  called); a load error (missing file, malformed data, empty dataset) is
+  deferred to `Build()`/`Run()`.
+- **Assertions** — `Assert(...Assertion)` accumulates assertions checked
+  against the completed run's report; `Run(ctx)` evaluates them
+  afterward and returns a non-nil error (with the `Summary` still
+  populated) if any fail or a `Metric` name is unrecognized — the DSL
+  equivalent of `resonate run`'s `assertions:`/`resonate hit`'s
+  `--assert`. `Assertion` itself (`Min`/`Max`/`GT`/`LT`/`Is`/`In`/
+  `Around`/`DeviatesAround`) is the same struct-literal type used
+  everywhere else — see [Scenarios](scenarios.md#assertions) for the
+  full condition set. Callers who want individual `Failure`s instead of
+  one joined error should call `Summary.Evaluate` directly rather than
+  `Assert`/`Run`.
+- **WebSocket** — `WS(url)` switches the `Scenario` to build a
+  `WSGenerator` instead: dial `url` fresh every iteration, then
+  `Message(body)` appends a message to the connection's sequence, with
+  `Wait()`/`Binary()`/`Extract`/`ExpectBody` applying to "whichever
+  message was most recently appended" the same way `Header`/`Query`/...
+  apply to "whichever request is currently being built." `Header`,
+  called before any `Message`, sets a connection header (a `WSMessage`
+  has no headers of its own). Mutually exclusive with `Target`/`Step`/
+  `Setup` — mixing them is a `Build()`/`Run()` error, as is `Extract`/
+  `ExpectBody` on a message with no `Wait()` (there's no response to
+  check). See [WebSocket](scenarios.md#websocket) for the message-check
+  rule language.
+
+  ```go
+  summary, err := resonate.NewScenario().
+  	WS("ws://localhost:8080/socket").
+  	Identity(map[string]string{"token": "abc123"}).
+  	Header("Authorization", "Bearer {{.Identity.token}}").
+  	Message(`{"type":"subscribe","channel":"orders"}`).
+  	Wait().
+  	Extract("session_id", "json:session_id").
+  	Message(`{"type":"ping","session":"{{.Vars.session_id}}"}`).
+  	Wait().
+  	Rate(20).Workers(10).Duration(30 * time.Second).
+  	Run(ctx)
+  ```
 - **Execution model** — `Rate`, `Workers`, `MaxWorkers`, `Duration`,
   `Requests`, `Stages(...Stage)`, `Iterations(n)`
 - **Terminal calls** — `Build()` returns the underlying `Generator`
-  (`*HTTPGenerator` or `*FlowGenerator`) for cases that need it directly;
-  `Run(ctx)` builds and runs in one step, returning a `Summary`
+  (`*HTTPGenerator`, `*FlowGenerator`, or `*WSGenerator`) for cases that
+  need it directly; `Run(ctx)` builds and runs in one step, returning a
+  `Summary` (and evaluating any `Assert`-ed assertions)
 
 `Scenario`'s fields are unexported by design — there's no struct-literal
 escape hatch, only the chained builder methods above.
@@ -140,8 +185,10 @@ if err := resonate.WriteHTMLFile("report.html", summary.HTMLReport()); err != ni
 
 ## Beyond `Scenario`
 
-For WebSocket, feeders, or assertions (which `Scenario` doesn't cover
-yet), use the struct-literal API the DSL is itself built on —
+`Scenario` now covers WebSocket, feeders, and assertions too, but the
+struct-literal API it's itself built on is still available directly for
+cases that want more control (e.g. building a `Generator` once and
+driving it with your own retry/orchestration loop instead of `Run`) —
 `resonate.NewHTTPGenerator`, `resonate.NewFlowGenerator`,
 `resonate.NewWSGenerator`, `resonate.Feeder`, `resonate.Run`,
 `resonate.Summary`, `resonate.Assertion`/`Evaluate`, and so on cover the

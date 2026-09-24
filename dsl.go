@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -27,11 +28,23 @@ type Scenario struct {
 	identities []map[string]string
 	httpOpts   HTTPOptions
 	opts       Options
+	assertions []Assertion
 
 	cur      *stepRef
 	active   *[]FlowStep   // where Step/Setup/Repeat/During/If append next; nil outside flow-building mode
 	stack    []*[]FlowStep // enclosing active lists, popped by End
-	buildErr error         // set by FileBody/RawFileBody on a read failure, surfaced by Build/Run
+	buildErr error         // set by FileBody/RawFileBody/Feeder on a load failure, surfaced by Build/Run
+
+	// ws is non-nil once WS is called, switching the Scenario to build a
+	// WSGenerator instead of an HTTPGenerator/FlowGenerator. Mutually
+	// exclusive with Target/Step/Setup. wsOpts holds Timeout/Insecure/
+	// Feeder for the WS connection (WSOptions has no BaseURL — BaseURL is
+	// a no-op once ws is set). curMsg points at the WSMessage most
+	// recently appended by Message, the WS analogue of cur/stepRef for a
+	// FlowStep/HTTPTarget.
+	ws     *WSTarget
+	wsOpts WSOptions
+	curMsg *WSMessage
 }
 
 // stepRef lets Header/Query/Body/Expect*/Extract/Pause mutate "whichever
@@ -189,10 +202,10 @@ func (s *Scenario) End() *Scenario {
 	return s
 }
 
-// Identity adds one identity to the pool used by flow steps: each virtual
-// user is assigned one identity round-robin, sticky for its lifetime, and
-// exposed to templates as {{.Identity.<key>}}. Only meaningful alongside
-// Step/Setup.
+// Identity adds one identity to the pool used by flow steps or a WS
+// connection: each virtual user is assigned one identity round-robin,
+// sticky for its lifetime, and exposed to templates as
+// {{.Identity.<key>}}. Only meaningful alongside Step/Setup/WS.
 func (s *Scenario) Identity(kv map[string]string) *Scenario {
 	s.identities = append(s.identities, kv)
 	return s
@@ -211,7 +224,17 @@ func (s *Scenario) Put(url string) *Scenario    { return s.Method("PUT", url) }
 func (s *Scenario) Patch(url string) *Scenario  { return s.Method("PATCH", url) }
 func (s *Scenario) Delete(url string) *Scenario { return s.Method("DELETE", url) }
 
+// Header sets a request header (HTTPTarget/FlowStep) or, once WS has been
+// called, a WebSocket connection header (WSMessage has no headers of its
+// own — WS connection headers are set once, before any Message calls).
 func (s *Scenario) Header(key, value string) *Scenario {
+	if s.ws != nil {
+		if s.ws.Header == nil {
+			s.ws.Header = map[string]string{}
+		}
+		s.ws.Header[key] = value
+		return s
+	}
 	s.ensureCurrent()
 	if *s.cur.header == nil {
 		*s.cur.header = map[string]string{}
@@ -310,8 +333,20 @@ func (s *Scenario) ExpectHeader(key, value string) *Scenario {
 
 // ExpectBody adds a check for the given extract-style rule ("json:<path>",
 // "yaml:<path>", "xml:<path>"), keyed by rule and valued by the expected
-// result ("" to only require the rule evaluates without error).
+// result ("" to only require the rule evaluates without error). After WS,
+// applies to the current Message instead (json:/xml: only, per WSMessage)
+// and is only meaningful alongside Wait.
 func (s *Scenario) ExpectBody(rule, value string) *Scenario {
+	if s.ws != nil {
+		if s.curMsg == nil {
+			return s
+		}
+		if s.curMsg.ExpectBody == nil {
+			s.curMsg.ExpectBody = map[string]string{}
+		}
+		s.curMsg.ExpectBody[rule] = value
+		return s
+	}
 	s.ensureCurrent()
 	if *s.cur.expectBody == nil {
 		*s.cur.expectBody = map[string]string{}
@@ -324,8 +359,19 @@ func (s *Scenario) ExpectBody(rule, value string) *Scenario {
 // variable — available to later flow steps (or, from a Setup step, every
 // iteration that virtual user runs afterward) via {{.Vars.<name>}}. Only
 // meaningful after Step/Setup; a no-op on an independent Target (which has
-// nothing to chain into).
+// nothing to chain into). After WS, applies to the current Message instead
+// (available to later messages in the same connection).
 func (s *Scenario) Extract(name, rule string) *Scenario {
+	if s.ws != nil {
+		if s.curMsg == nil {
+			return s
+		}
+		if s.curMsg.Extract == nil {
+			s.curMsg.Extract = map[string]string{}
+		}
+		s.curMsg.Extract[name] = rule
+		return s
+	}
 	s.ensureCurrent()
 	if s.cur.extract == nil {
 		return s
@@ -367,17 +413,30 @@ func (s *Scenario) PauseRange(min, max time.Duration) *Scenario {
 // paths instead of repeating "http://host:port" on every Target/Step/
 // Setup call. A URL that doesn't start with "/" (already absolute, or a
 // "{{...}}" template expression) is left untouched.
+// BaseURL is meaningless for a WS scenario (WSOptions has no BaseURL) — a
+// no-op once WS has been called.
 func (s *Scenario) BaseURL(url string) *Scenario {
+	if s.ws != nil {
+		return s
+	}
 	s.httpOpts.BaseURL = url
 	return s
 }
 
 func (s *Scenario) Timeout(d time.Duration) *Scenario {
+	if s.ws != nil {
+		s.wsOpts.Timeout = d
+		return s
+	}
 	s.httpOpts.Timeout = d
 	return s
 }
 
 func (s *Scenario) Insecure() *Scenario {
+	if s.ws != nil {
+		s.wsOpts.Insecure = true
+		return s
+	}
 	s.httpOpts.Insecure = true
 	return s
 }
@@ -426,6 +485,87 @@ func (s *Scenario) Iterations(n uint64) *Scenario {
 	return s
 }
 
+// Feeder loads path (.csv or .json) and hands out one row per iteration to
+// templates as {{.Feeder.<column>}} — mode is "sequential" (default,
+// round-robin), "random", or "stream" (for a file too large to comfortably
+// fit in memory). See NewFeeder. Applies to whichever kind of Scenario is
+// being built (HTTPTarget/FlowStep or, once WS has been called, the WS
+// connection). Any load error (missing file, malformed data, empty
+// dataset) is deferred and returned from Build/Run, same as
+// FileBody/RawFileBody.
+func (s *Scenario) Feeder(path, mode string) *Scenario {
+	f, err := NewFeeder(path, mode)
+	if err != nil {
+		s.deferErr(fmt.Errorf("resonate: Feeder(%q, %q): %w", path, mode, err))
+		return s
+	}
+	if s.ws != nil {
+		s.wsOpts.Feeder = f
+		return s
+	}
+	s.httpOpts.Feeder = f
+	return s
+}
+
+// Assert adds one or more assertions checked against the completed run's
+// report — the DSL equivalent of resonate run's scenario-file
+// assertions:/resonate hit's --assert. Run evaluates every accumulated
+// Assertion after the run finishes (combined with AND) and returns a
+// non-nil error, alongside the still-valid Summary, if any fail or if a
+// Metric name is unrecognized. Callers who want the failures individually
+// (rather than joined into one error) should call Summary.Evaluate
+// directly instead of Assert/Run.
+func (s *Scenario) Assert(assertions ...Assertion) *Scenario {
+	s.assertions = append(s.assertions, assertions...)
+	return s
+}
+
+// WS switches the Scenario to build a WSGenerator instead of an
+// HTTPGenerator/FlowGenerator: dial url fresh every iteration, exchange
+// the message sequence built by subsequent Message/Wait/Binary/Extract/
+// ExpectBody calls, then close. Mutually exclusive with Target/Step/Setup
+// — mixing them is a Build/Run error. Header, before any Message call,
+// sets a connection header (WSMessage has no headers of its own).
+func (s *Scenario) WS(url string) *Scenario {
+	s.ws = &WSTarget{URL: url}
+	s.wsOpts = DefaultWSOptions()
+	s.curMsg = nil
+	return s
+}
+
+// Message appends a message to the WS connection's sequence, sent in
+// order. Subsequent Wait/Binary/Extract/ExpectBody calls apply to this
+// message until the next Message call. Only meaningful after WS.
+func (s *Scenario) Message(body string) *Scenario {
+	if s.ws == nil {
+		return s
+	}
+	s.ws.Messages = append(s.ws.Messages, WSMessage{Body: body})
+	s.curMsg = &s.ws.Messages[len(s.ws.Messages)-1]
+	return s
+}
+
+// Wait marks the current message as reading and measuring one response
+// frame after sending — required for Extract/ExpectBody on that message to
+// have anything to check. Only meaningful after Message.
+func (s *Scenario) Wait() *Scenario {
+	if s.curMsg == nil {
+		return s
+	}
+	s.curMsg.Wait = true
+	return s
+}
+
+// Binary sends the current message as a binary frame instead of text. Only
+// meaningful after Message.
+func (s *Scenario) Binary() *Scenario {
+	if s.curMsg == nil {
+		return s
+	}
+	s.curMsg.Binary = true
+	return s
+}
+
 // Build compiles the accumulated target(s)/step(s)/options into a
 // Generator, without running it — for callers who want the Generator
 // itself (e.g. to pass to their own retry/orchestration logic) rather than
@@ -437,6 +577,18 @@ func (s *Scenario) Build() (Generator, error) {
 		return nil, s.buildErr
 	}
 	isFlow := len(s.flow) > 0 || len(s.setup) > 0
+	if s.ws != nil && (isFlow || len(s.targets) > 0) {
+		return nil, fmt.Errorf("resonate: scenario mixes WS with Target/Step/Setup — use one or the other, not both")
+	}
+	if s.ws != nil {
+		for i, m := range s.ws.Messages {
+			if !m.Wait && (len(m.Extract) > 0 || len(m.ExpectBody) > 0) {
+				return nil, fmt.Errorf("resonate: message %d has Extract/ExpectBody but no Wait — there's no response to check", i)
+			}
+		}
+		s.wsOpts.Identities = s.identities
+		return NewWSGenerator(*s.ws, s.wsOpts)
+	}
 	if isFlow && len(s.targets) > 0 {
 		return nil, fmt.Errorf("resonate: scenario mixes Target (or an implicit Get/Post/... target) with Step/Setup — use one or the other, not both")
 	}
@@ -444,18 +596,37 @@ func (s *Scenario) Build() (Generator, error) {
 		return NewFlowGenerator(s.flow, s.setup, FlowOptions{HTTP: s.httpOpts, Identities: s.identities})
 	}
 	if len(s.targets) == 0 {
-		return nil, fmt.Errorf("resonate: scenario has no request configured (call Get/Post/Target/Step/Setup first)")
+		return nil, fmt.Errorf("resonate: scenario has no request configured (call Get/Post/Target/Step/Setup/WS first)")
 	}
 	return NewHTTPGenerator(s.targets, s.httpOpts)
 }
 
 // Run builds the Scenario and runs it via Run, closing the Generator
-// afterward.
+// afterward. If Assert was called, the accumulated assertions are
+// evaluated against the resulting Summary; a non-nil error is returned
+// (alongside the still-valid Summary) if any fail or if a Metric name is
+// unrecognized — same semantics as resonate run/resonate hit's assertion
+// gating, just as a Go error instead of a process exit code.
 func (s *Scenario) Run(ctx context.Context) (Summary, error) {
 	gen, err := s.Build()
 	if err != nil {
 		return Summary{}, err
 	}
 	defer gen.Close()
-	return Run(ctx, gen, s.opts), nil
+	summary := Run(ctx, gen, s.opts)
+	if len(s.assertions) == 0 {
+		return summary, nil
+	}
+	failures, err := summary.Evaluate(s.assertions)
+	if err != nil {
+		return summary, err
+	}
+	if len(failures) == 0 {
+		return summary, nil
+	}
+	reasons := make([]string, len(failures))
+	for i, f := range failures {
+		reasons[i] = f.String()
+	}
+	return summary, fmt.Errorf("resonate: %d of %d assertion(s) failed: %s", len(failures), len(s.assertions), strings.Join(reasons, "; "))
 }
