@@ -8,6 +8,11 @@ reusable multi-target/multi-step/WebSocket scenarios, and the same
 engine as a Go library.
 
 > **Heads up**: this project is under active development and in alpha. APIs, flags, and the YAML schema may change without notice. Use at your own risk.
+>
+> A scenario file can read local files and environment variables
+> (`body_file`, `feeder`, `env "VAR_NAME"`) and send them wherever it's
+> configured to — treat it as trusted input, like a shell script. See
+> [SECURITY.md](SECURITY.md) for reporting a vulnerability.
 
 **See [`docs/`](docs)** for the full guide — install, usage, the scenario
 YAML schema, execution models, reports, the Go library, and a generated
@@ -61,4 +66,6 @@ struct-literal API.
 - [Issues](https://github.com/jecklgamis/resonate/issues) — bugs and
   feature requests
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community standards
+- [SECURITY.md](SECURITY.md) — reporting a vulnerability
 - [LICENSE](LICENSE) — Apache License 2.0

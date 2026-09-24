@@ -6,6 +6,14 @@ base URLs, feeders, identities, control flow, WebSocket, and assertions —
 see [Execution Models](execution-models.md) for the `load:` block
 (`rate`, `workers`, `stages`, `iterations`).
 
+> **Treat a scenario file as trusted input, like a shell script.**
+> `body_file`/`raw_body_file`/`feeder.file` read whatever local path they
+> name and send its contents to whatever URL the scenario specifies, and
+> the `env "VAR_NAME"` template function can put an environment variable's
+> value into a request. Only run a scenario file (or `resonate hit`
+> invocation) from a source you trust — the same rule you'd apply to a
+> `Makefile` or CI config, not to a passive data file.
+
 ## Independent Targets
 
 `http.targets`: independent, stateless requests, round-robin per

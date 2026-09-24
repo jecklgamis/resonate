@@ -2,7 +2,9 @@
 
 Thanks for taking the time to contribute. resonate is in alpha, so expect
 some churn — but bug reports, fixes, and small focused improvements are
-welcome.
+welcome. Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Found a security vulnerability instead of a regular bug? See
+[SECURITY.md](SECURITY.md) — please don't open a public issue for it.
 
 ## Before you start
 
@@ -31,6 +33,11 @@ atomics, and `sync.Map`), always run the race detector:
 ```sh
 go test ./... -race
 ```
+
+`make coverage` runs the full suite with `-race` and a coverage profile,
+printing the total at the end; CI runs it on every push/PR and uploads
+`coverage.out` as a build artifact. There's no enforced minimum threshold —
+use it to spot untested branches in whatever you're changing, not as a gate.
 
 ## Code style
 
