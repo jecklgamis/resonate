@@ -1,10 +1,14 @@
 ## resonate
 
-resonate is a load generator
+Load test HTTP and WebSocket services
 
 ### Synopsis
 
 resonate drives configurable load against HTTP and WebSocket targets.
+
+Quick start:
+  resonate hit https://example.com --duration 2s
+  resonate run scenario.yaml
 
 ### Options
 

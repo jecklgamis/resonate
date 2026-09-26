@@ -1,0 +1,26 @@
+{"timestamp":"2026-09-26T12:24:56.255763+10:00","latency_ms":449.840958,"status_code":200,"bytes_in":84390,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.25574+10:00","latency_ms":452.506833,"status_code":200,"bytes_in":84271,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.255753+10:00","latency_ms":454.959958,"status_code":200,"bytes_in":84148,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.255761+10:00","latency_ms":457.9025,"status_code":200,"bytes_in":84189,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.256084+10:00","latency_ms":457.628125,"status_code":200,"bytes_in":84248,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.255753+10:00","latency_ms":462.834708,"status_code":200,"bytes_in":84450,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.255758+10:00","latency_ms":467.606167,"status_code":200,"bytes_in":84303,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.25628+10:00","latency_ms":475.960292,"status_code":200,"bytes_in":84263,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.255754+10:00","latency_ms":477.718333,"status_code":200,"bytes_in":84601,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.255761+10:00","latency_ms":493.199459,"status_code":200,"bytes_in":84498,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.718602+10:00","latency_ms":222.081958,"status_code":200,"bytes_in":84206,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.708392+10:00","latency_ms":239.310125,"status_code":200,"bytes_in":84446,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.723379+10:00","latency_ms":230.024458,"status_code":200,"bytes_in":84556,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.705633+10:00","latency_ms":249.978583,"status_code":200,"bytes_in":84183,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.710729+10:00","latency_ms":249.10975,"status_code":200,"bytes_in":84405,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.713674+10:00","latency_ms":249.943541,"status_code":200,"bytes_in":84278,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.732253+10:00","latency_ms":236.311208,"status_code":200,"bytes_in":84255,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.713762+10:00","latency_ms":259.98125,"status_code":200,"bytes_in":84376,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.748978+10:00","latency_ms":238.239708,"status_code":200,"bytes_in":84471,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.733486+10:00","latency_ms":257.993917,"status_code":200,"bytes_in":84248,"bytes_out":0,"protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.959853+10:00","latency_ms":297.110417,"status_code":0,"bytes_in":0,"bytes_out":0,"error":"Get \"https://www.google.com\": context deadline exceeded","protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.973752+10:00","latency_ms":283.329833,"status_code":0,"bytes_in":0,"bytes_out":0,"error":"Get \"https://www.google.com\": context deadline exceeded","protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.991493+10:00","latency_ms":265.701791,"status_code":0,"bytes_in":0,"bytes_out":0,"error":"Get \"https://www.google.com\": context deadline exceeded","protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.987232+10:00","latency_ms":270.006458,"status_code":0,"bytes_in":0,"bytes_out":0,"error":"Get \"https://www.google.com\": context deadline exceeded","protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.940715+10:00","latency_ms":316.544708,"status_code":0,"bytes_in":0,"bytes_out":0,"error":"Get \"https://www.google.com\": context deadline exceeded","protocol":"http"}
+{"timestamp":"2026-09-26T12:24:56.947728+10:00","latency_ms":309.678334,"status_code":0,"bytes_in":0,"bytes_out":0,"error":"Get \"https://www.google.com\": context deadline exceeded","protocol":"http"}

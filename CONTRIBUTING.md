@@ -14,7 +14,22 @@ It's a lot easier to align on design before code is written than after.
 
 ## Development setup
 
-Requires Go (see `go.mod` for the pinned version).
+Install Go, the version declared in `go.mod`, from the official
+[Go downloads page](https://go.dev/dl/). A guide for Mac and Vscode is here:
+
+```sh
+brew install go
+go version # verify the installation
+```
+
+In VS Code, press `Cmd+Shift+X` to open Extensions, search for `Go`, and
+install **Go** published by **Go Team at Google** (`golang.go`).
+
+Install the required Go tools from VS Code: press `Cmd+Shift+P`, run
+`Go: Install/Update Tools`, select `gopls` and `dlv`, then confirm the
+installation.
+
+Clone the repository, download its Go module dependencies, and run the checks:
 
 ```sh
 git clone https://github.com/jecklgamis/resonate.git

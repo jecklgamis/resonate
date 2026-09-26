@@ -21,7 +21,7 @@ resonate hit <url> [flags]
       --ca-cert string              Additional CA certificate(s) (PEM) to trust, e.g. for a private/internal CA
       --cert string                 Client certificate file for mTLS (requires --key)
       --dry-run                     Send exactly one real request and print its result, instead of running the full load test
-      --duration duration           Test duration, e.g. 30s (default 10s if --requests not set)
+      --duration duration           Test duration, e.g. 30s (default 2s if --requests not set)
       --expect-body stringArray     Response body check "rule=value" using the same rule language as extract ("json:<JSONPath>", "yaml:<JSONPath>", "xml:<XPath>"), e.g. --expect-body 'json:status=ok' (repeatable)
       --expect-header stringArray   Response header check "Key: Value" (exact match), or "Key:" to just require it's present (repeatable)
       --expect-status ints          Comma-separated status codes that count as success (overrides the default 2xx/3xx check), e.g. --expect-status 200,201,404
@@ -52,5 +52,5 @@ resonate hit <url> [flags]
 
 ### SEE ALSO
 
-* [resonate](resonate.md)	 - resonate is a load generator
+* [resonate](resonate.md)	 - Load test HTTP and WebSocket services
 

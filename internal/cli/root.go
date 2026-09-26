@@ -5,14 +5,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewRootCommand builds the resonate command tree without executing it —
-// split out from Execute so cmd/gendocs can generate reference docs from it
-// without spawning a real CLI invocation.
 func NewRootCommand(version string) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "resonate",
-		Short:         "resonate is a load generator",
-		Long:          "resonate drives configurable load against HTTP and WebSocket targets.",
+		Use:   "resonate",
+		Short: "Load test HTTP and WebSocket services",
+		Long: "resonate drives configurable load against HTTP and WebSocket targets.\n\n" +
+			"Quick start:\n" +
+			"  resonate hit https://example.com --duration 2s\n" +
+			"  resonate run scenario.yaml",
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,

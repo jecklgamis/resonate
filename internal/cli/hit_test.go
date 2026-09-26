@@ -430,7 +430,7 @@ func TestHitCommandInvalidURLFailsFastNotSlow(t *testing.T) {
 	cmd := newHitCommand()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
-	// No --requests/--duration: this would fall back to the 10s default
+	// No --requests/--duration: this would fall back to the 2s default
 	// duration if the bad URL weren't caught at construction time.
 	cmd.SetArgs([]string{"not-a-valid-url"})
 
@@ -445,7 +445,7 @@ func TestHitCommandInvalidURLFailsFastNotSlow(t *testing.T) {
 		t.Fatal("expected an error for an invalid literal URL")
 	}
 	if elapsed > time.Second {
-		t.Errorf("command took %v to fail, want near-instant (it must not fall through to a 10s run)", elapsed)
+		t.Errorf("command took %v to fail, want near-instant (it must not fall through to a 2s run)", elapsed)
 	}
 }
 
