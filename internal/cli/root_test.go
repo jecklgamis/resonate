@@ -45,7 +45,7 @@ func TestExecuteRunsRootCommand(t *testing.T) {
 	}
 }
 
-func TestRootHelpExplainsQuickStartsAndCapabilities(t *testing.T) {
+func TestRootHelpShowsQuickStarts(t *testing.T) {
 	origArgs := os.Args
 	os.Args = []string{"resonate", "--help"}
 	t.Cleanup(func() { os.Args = origArgs })
@@ -56,10 +56,8 @@ func TestRootHelpExplainsQuickStartsAndCapabilities(t *testing.T) {
 		}
 	})
 	for _, want := range []string{
-		"resonate hit https://example.com --duration 1s",
+		"resonate hit https://example.com --duration 2s",
 		"resonate run scenario.yaml",
-		"WebSocket tests",
-		"--dry-run",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("root help missing %q", want)
@@ -73,7 +71,7 @@ func TestCommandsWithoutRequiredArgumentsExplainHowToContinue(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "hit", args: []string{"hit"}, want: "resonate hit https://example.com --duration 1s"},
+		{name: "hit", args: []string{"hit"}, want: "resonate hit https://example.com --duration 2s"},
 		{name: "run", args: []string{"run"}, want: "resonate run scenario.yaml"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

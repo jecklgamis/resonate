@@ -11,7 +11,7 @@ func NewRootCommand(version string) *cobra.Command {
 		Short: "Load test HTTP and WebSocket services",
 		Long: "resonate drives configurable load against HTTP and WebSocket targets.\n\n" +
 			"Quick start:\n" +
-			"  resonate hit https://example.com --duration 1s\n" +
+			"  resonate hit https://example.com --duration 2s\n" +
 			"  resonate run scenario.yaml",
 		Version:       version,
 		SilenceUsage:  true,

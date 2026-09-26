@@ -55,7 +55,7 @@ func newHitCommand() *cobra.Command {
 			"--body '{\"id\": {{.Seq}}, \"tok\": \"{{uuid}}\"}'. See README for the function list.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
-				return fmt.Errorf("expected one URL, got %d; try '%s --help' or '%s hit https://example.com --duration 10s'", len(args), cmd.CommandPath(), cmd.Root().CommandPath())
+				return fmt.Errorf("expected one URL, got %d; try '%s --help' or '%s hit https://example.com --duration 2s'", len(args), cmd.CommandPath(), cmd.Root().CommandPath())
 			}
 			return nil
 		},
@@ -109,7 +109,7 @@ func newHitCommand() *cobra.Command {
 			}
 
 			if duration == 0 && requests == 0 && iterations == 0 {
-				duration = 10 * time.Second
+				duration = 2 * time.Second
 			}
 
 			a, err := generator.NewHTTPGenerator(
@@ -152,7 +152,7 @@ func newHitCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&body, "body", "d", "", "Request body (templated)")
 	cmd.Flags().StringVar(&bodyFile, "body-file", "", "Read request body from file (templated)")
 	cmd.Flags().StringVar(&rawBodyFile, "raw-body-file", "", "Read request body from file and send it as-is, bypassing templating (for large/binary payloads); overrides --body/--body-file")
-	cmd.Flags().DurationVar(&duration, "duration", 0, "Test duration, e.g. 30s (default 10s if --requests not set)")
+	cmd.Flags().DurationVar(&duration, "duration", 0, "Test duration, e.g. 30s (default 2s if --requests not set)")
 	cmd.Flags().Uint64Var(&requests, "requests", 0, "Total number of requests to send (overrides --duration as the stop condition)")
 	cmd.Flags().Uint64Var(&iterations, "iterations", 0, "Requests per virtual user before it departs (0 = runs for the whole test); with no --duration/--requests, total = --workers * --iterations")
 	cmd.Flags().Float64Var(&reqRate, "rate", 0, "Target requests/sec across all workers (0 = unlimited)")
