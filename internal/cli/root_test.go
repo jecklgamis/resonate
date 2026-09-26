@@ -56,7 +56,7 @@ func TestRootHelpExplainsQuickStartsAndCapabilities(t *testing.T) {
 		}
 	})
 	for _, want := range []string{
-		"resonate hit https://example.com --duration 10s",
+		"resonate hit https://example.com --duration 1s",
 		"resonate run scenario.yaml",
 		"WebSocket tests",
 		"--dry-run",
@@ -73,7 +73,7 @@ func TestCommandsWithoutRequiredArgumentsExplainHowToContinue(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "hit", args: []string{"hit"}, want: "resonate hit https://example.com --duration 10s"},
+		{name: "hit", args: []string{"hit"}, want: "resonate hit https://example.com --duration 1s"},
 		{name: "run", args: []string{"run"}, want: "resonate run scenario.yaml"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
