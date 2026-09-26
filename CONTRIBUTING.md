@@ -34,7 +34,6 @@ Clone the repository, download its Go module dependencies, and run the checks:
 ```sh
 git clone https://github.com/jecklgamis/resonate.git
 cd resonate
-
 make build          # bin/resonate
 make test           # go test ./...
 make check          # fmt-check + vet + test — run this before opening a PR
