@@ -53,7 +53,12 @@ func newHitCommand() *cobra.Command {
 		Long: "Send HTTP load to a single URL. The url, headers, query values, and body\n" +
 			"may all contain {{ }} template expressions, re-rendered per request, e.g.\n" +
 			"--body '{\"id\": {{.Seq}}, \"tok\": \"{{uuid}}\"}'. See README for the function list.",
-		Args: cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return fmt.Errorf("expected one URL, got %d; try '%s --help' or '%s hit https://example.com --duration 10s'", len(args), cmd.CommandPath(), cmd.Root().CommandPath())
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			url := args[0]
 

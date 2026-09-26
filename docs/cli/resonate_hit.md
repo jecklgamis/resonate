@@ -52,5 +52,5 @@ resonate hit <url> [flags]
 
 ### SEE ALSO
 
-* [resonate](resonate.md)	 - resonate is a load generator
+* [resonate](resonate.md)	 - Load test HTTP and WebSocket services
 

@@ -10,9 +10,16 @@ import (
 // without spawning a real CLI invocation.
 func NewRootCommand(version string) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "resonate",
-		Short:         "resonate is a load generator",
-		Long:          "resonate drives configurable load against HTTP and WebSocket targets.",
+		Use:   "resonate",
+		Short: "Load test HTTP and WebSocket services",
+		Long: "resonate drives configurable load against HTTP and WebSocket targets.\n\n" +
+			"Quick start:\n" +
+			"  resonate hit https://example.com --duration 10s\n" +
+			"  resonate run scenario.yaml\n\n" +
+			"Use 'hit' for a one-off HTTP test with request, rate, TLS, templating,\n" +
+			"response-check, and report options. Use 'run' for reusable YAML scenarios,\n" +
+			"including multi-step flows and WebSocket tests. Add --dry-run to send one\n" +
+			"real request or iteration; use --help on a command to see all its options.",
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
