@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1132,5 +1133,64 @@ func TestResolveStepsPropagatesExtract(t *testing.T) {
 	}
 	if steps[0].Extract["token"] != "json:token" {
 		t.Errorf("Extract = %+v, want token=json:token", steps[0].Extract)
+	}
+}
+
+func TestRunHelpIsConciseAndPointsToSchema(t *testing.T) {
+	cmd := newRunCommand()
+	cmd.SetArgs([]string{"--help"})
+
+	output := captureStdout(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("Execute help: %v", err)
+		}
+	})
+
+	for _, want := range []string{"Run a load test scenario from a scenario config YAML file.", "Usage:", "Examples:", "Flags:"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("run help missing %q", want)
+		}
+	}
+	usageIndex := strings.Index(output, "Usage:")
+	examplesIndex := strings.Index(output, "Examples:")
+	if usageIndex < 0 || examplesIndex < 0 || usageIndex >= examplesIndex {
+		t.Errorf("expected Usage before Examples, got:\n%s", output)
+	}
+	if strings.Contains(output, "Scenario:") || strings.Contains(output, "\nExample:") {
+		t.Errorf("help should not repeat the Examples heading, got:\n%s", output)
+	}
+	if !strings.Contains(output, "resonate schema") {
+		t.Errorf("run help missing schema guidance, got:\n%s", output)
+	}
+	if !strings.Contains(output, "protocol: http") {
+		t.Errorf("run help missing scenario example, got:\n%s", output)
+	}
+	if !strings.Contains(output, "  protocol: http\n  load:\n    duration: 30s\n    rate: 50\n    workers: 10\n  http:\n") {
+		t.Errorf("scenario example is not a complete top-level YAML mapping, got:\n%s", output)
+	}
+}
+
+func TestSchemaCommandPrintsFullScenarioSchema(t *testing.T) {
+	cmd := NewRootCommand("test")
+	cmd.SetArgs([]string{"schema"})
+	var output strings.Builder
+	cmd.SetOut(&output)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute schema: %v", err)
+	}
+	if got := output.String(); got != config.ScenarioSchema() {
+		t.Fatal("schema output does not match the embedded schema")
+	}
+	if !json.Valid([]byte(output.String())) {
+		t.Fatal("--schema output is not valid JSON")
+	}
+}
+
+func TestSchemaCommandRejectsArguments(t *testing.T) {
+	cmd := NewRootCommand("test")
+	cmd.SetArgs([]string{"schema", "scenario.yaml"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("Execute schema with an argument should fail")
 	}
 }

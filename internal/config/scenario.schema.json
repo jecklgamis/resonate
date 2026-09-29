@@ -1,0 +1,664 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jecklgamis/resonate/main/internal/config/scenario.schema.json",
+  "title": "Resonate scenario",
+  "description": "YAML scenario configuration accepted by `resonate run`. Print this schema with `resonate schema`.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "enum": ["http", "ws"],
+      "default": "http",
+      "description": "Scenario protocol. Defaults to HTTP."
+    },
+    "load": {
+      "$ref": "#/$defs/load"
+    },
+    "http": {
+      "$ref": "#/$defs/http"
+    },
+    "ws": {
+      "$ref": "#/$defs/websocket"
+    },
+    "assertions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assertion"
+      }
+    }
+  },
+  "required": ["load"],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "protocol": {
+            "const": "ws"
+          }
+        },
+        "required": ["protocol"]
+      },
+      "then": {
+        "required": ["ws"],
+        "not": {
+          "required": ["http"]
+        }
+      },
+      "else": {
+        "required": ["http"],
+        "not": {
+          "required": ["ws"]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "duration": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A Go time.Duration string, for example 500ms, 5s, or 2m."
+    },
+    "numberOrString": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        }
+      ]
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "identity": {
+      "$ref": "#/$defs/stringMap",
+      "description": "Values exposed to request templates as .Identity.<name>."
+    },
+    "feeder": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to a CSV file (header row required) or JSON array of flat objects."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["sequential", "random", "stream"],
+          "default": "sequential",
+          "description": "Row selection mode. Sequential wraps around; stream reads incrementally."
+        }
+      },
+      "required": ["file"]
+    },
+    "load": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "$ref": "#/$defs/duration",
+          "description": "Stop after this duration. Combined with requests, whichever is reached first stops the run."
+        },
+        "requests": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum number of iterations."
+        },
+        "rate": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Target iteration start rate per second; 0 means unpaced."
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of concurrent virtual users."
+        },
+        "max_workers": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Concurrency ceiling for rate-driven load. Requires rate > 0 unless stages is set."
+        },
+        "iterations": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Iterations per virtual user before that user is replaced. Alone, requires workers and runs exactly workers * iterations."
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Ramp schedule; replaces flat duration/rate/workers settings.",
+          "items": {
+            "$ref": "#/$defs/stage"
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["duration"]
+        },
+        {
+          "required": ["requests"]
+        },
+        {
+          "required": ["iterations"]
+        },
+        {
+          "required": ["stages"]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "max_workers": {
+                "minimum": 1
+              }
+            },
+            "required": ["max_workers"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": ["stages"]
+              },
+              {
+                "required": ["rate"],
+                "properties": {
+                  "rate": {
+                    "exclusiveMinimum": 0
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "type": "string",
+          "description": "Stage duration; omitted or 0 makes an instantaneous jump."
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rate": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Target iteration rate at the end of the stage."
+        }
+      }
+    },
+    "http": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Independent requests, selected round-robin per iteration.",
+          "items": {
+            "$ref": "#/$defs/request"
+          }
+        },
+        "flow": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Ordered requests run per iteration; extracted values are available as .Vars.<name> in later steps.",
+          "items": {
+            "$ref": "#/$defs/flowEntry"
+          }
+        },
+        "setup": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Steps run once per virtual user before its first flow iteration.",
+          "items": {
+            "$ref": "#/$defs/flowEntry"
+          }
+        },
+        "identities": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/identity"
+          },
+          "description": "Sticky per-virtual-user template data; only used with flow."
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "base_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Prepended to request URLs that start with /."
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "insecure": {
+          "type": "boolean",
+          "description": "Skip TLS certificate verification."
+        },
+        "no_follow_redirects": {
+          "type": "boolean"
+        },
+        "max_idle_conns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum idle connections per target host; 0 uses Go's default."
+        },
+        "max_response_body": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum response body bytes read and counted per request; 0 is unlimited."
+        },
+        "cert_file": {
+          "type": "string"
+        },
+        "key_file": {
+          "type": "string"
+        },
+        "ca_file": {
+          "type": "string"
+        },
+        "h2c": {
+          "type": "boolean",
+          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options and disable_keepalive."
+        },
+        "disable_keepalive": {
+          "type": "boolean",
+          "description": "Disable connection reuse; mutually exclusive with h2c."
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["targets"],
+          "not": {
+            "required": ["flow"]
+          }
+        },
+        {
+          "required": ["flow"],
+          "not": {
+            "required": ["targets"]
+          }
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": ["setup"]
+              },
+              {
+                "required": ["identities"]
+              }
+            ]
+          },
+          "then": {
+            "required": ["flow"]
+          }
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "type": "string",
+          "description": "HTTP method; defaults to GET."
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Absolute URL, or a path beginning with / when http.base_url is set. Supports templates."
+        },
+        "query": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "headers": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "body": {
+          "type": "string",
+          "description": "Request body template."
+        },
+        "body_file": {
+          "type": "string",
+          "description": "Path to a request body file; its contents are templated."
+        },
+        "raw_body_file": {
+          "type": "string",
+          "description": "Path to request body bytes sent without templating."
+        },
+        "extract": {
+          "$ref": "#/$defs/stringMap",
+          "description": "Flow/setup only: map variable names to extraction rules (json:, yaml:, xml:, regex:, css:, header:, or status); ignored on independent targets."
+        },
+        "pause": {
+          "$ref": "#/$defs/duration",
+          "description": "Flow/setup only: think time before this request; ignored on independent targets."
+        },
+        "pause_max": {
+          "$ref": "#/$defs/duration",
+          "description": "Flow/setup only: upper bound for a random pause when greater than pause; ignored on independent targets."
+        },
+        "expect_status": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599
+          }
+        },
+        "expect_headers": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "expect_body": {
+          "$ref": "#/$defs/stringMap",
+          "description": "Map extraction rules to expected values; empty values only require the rule to resolve."
+        }
+      },
+      "required": ["url"],
+      "not": {
+        "anyOf": [
+          {
+            "required": ["body", "raw_body_file"]
+          },
+          {
+            "required": ["body_file", "raw_body_file"]
+          }
+        ]
+      }
+    },
+    "flowEntry": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/request"
+        },
+        {
+          "$ref": "#/$defs/controlBlock"
+        }
+      ]
+    },
+    "controlBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repeat": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "during": {
+          "$ref": "#/$defs/duration"
+        },
+        "if": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/flowEntry"
+          }
+        }
+      },
+      "required": ["steps"],
+      "oneOf": [
+        {
+          "required": ["repeat"],
+          "not": {
+            "anyOf": [
+              {
+                "required": ["during"]
+              },
+              {
+                "required": ["if"]
+              }
+            ]
+          }
+        },
+        {
+          "required": ["during"],
+          "not": {
+            "anyOf": [
+              {
+                "required": ["repeat"]
+              },
+              {
+                "required": ["if"]
+              }
+            ]
+          }
+        },
+        {
+          "required": ["if"],
+          "not": {
+            "anyOf": [
+              {
+                "required": ["repeat"]
+              },
+              {
+                "required": ["during"]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "websocket": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^(wss?://|\\{\\{)",
+          "description": "WebSocket URL; supports templates."
+        },
+        "headers": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/wsMessage"
+          }
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "insecure": {
+          "type": "boolean"
+        }
+      },
+      "required": ["url", "messages"]
+    },
+    "wsMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "type": "string",
+          "description": "Message body template."
+        },
+        "binary": {
+          "type": "boolean",
+          "description": "Send as a binary frame instead of text."
+        },
+        "wait": {
+          "type": "boolean",
+          "description": "Wait for one response frame."
+        },
+        "extract": {
+          "$ref": "#/$defs/stringMap",
+          "description": "Extract response frame values for later messages; requires wait: true."
+        },
+        "expect_body": {
+          "$ref": "#/$defs/stringMap",
+          "description": "Check the response frame; requires wait: true."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": ["extract"]
+              },
+              {
+                "required": ["expect_body"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "wait": {
+                "const": true
+              }
+            },
+            "required": ["wait"]
+          }
+        }
+      ]
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metric": {
+          "type": "string",
+          "pattern": "^(requests|success|success_rate|error_rate|rate|latency_(min|mean|stddev|max|p(100(\\.0+)?|([0-9]|[1-9][0-9])(\\.[0-9]+)?)))$",
+          "description": "Metric to evaluate; percentile metrics may use latency_p<N>, where N is between 0 and 100."
+        },
+        "min": {
+          "$ref": "#/$defs/numberOrString"
+        },
+        "max": {
+          "$ref": "#/$defs/numberOrString"
+        },
+        "gt": {
+          "$ref": "#/$defs/numberOrString"
+        },
+        "lt": {
+          "$ref": "#/$defs/numberOrString"
+        },
+        "is": {
+          "$ref": "#/$defs/numberOrString"
+        },
+        "in": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/numberOrString"
+          }
+        },
+        "around": {
+          "$ref": "#/$defs/numberOrString"
+        },
+        "around_margin": {
+          "$ref": "#/$defs/numberOrString"
+        },
+        "around_exclusive": {
+          "type": "boolean"
+        },
+        "deviates_around": {
+          "$ref": "#/$defs/numberOrString"
+        },
+        "deviates_percent": {
+          "$ref": "#/$defs/numberOrString",
+          "description": "Percentage margin; for example 10 means plus or minus 10%."
+        },
+        "deviates_exclusive": {
+          "type": "boolean"
+        }
+      },
+      "required": ["metric"],
+      "anyOf": [
+        {
+          "required": ["min"]
+        },
+        {
+          "required": ["max"]
+        },
+        {
+          "required": ["gt"]
+        },
+        {
+          "required": ["lt"]
+        },
+        {
+          "required": ["is"]
+        },
+        {
+          "required": ["in"]
+        },
+        {
+          "required": ["around", "around_margin"]
+        },
+        {
+          "required": ["deviates_around", "deviates_percent"]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": ["around"]
+          },
+          "then": {
+            "required": ["around_margin"]
+          }
+        },
+        {
+          "if": {
+            "required": ["around_margin"]
+          },
+          "then": {
+            "required": ["around"]
+          }
+        },
+        {
+          "if": {
+            "required": ["deviates_around"]
+          },
+          "then": {
+            "required": ["deviates_percent"]
+          }
+        },
+        {
+          "if": {
+            "required": ["deviates_percent"]
+          },
+          "then": {
+            "required": ["deviates_around"]
+          }
+        }
+      ]
+    }
+  }
+}

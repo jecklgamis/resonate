@@ -39,7 +39,7 @@ make test           # go test ./...
 make check          # fmt-check + vet + test — run this before opening a PR
 ```
 
-Other useful targets: `make fmt` (gofmt), `make run ARGS='http https://example.com --duration 5s'`.
+Other useful targets: `make fmt` (gofmt), `make run ARGS='hit https://example.com --duration 5s'`.
 See `make help` for the full list.
 
 When touching `internal/engine` or `internal/generator` (both use goroutines,

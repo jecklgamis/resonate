@@ -6,6 +6,10 @@ base URLs, feeders, identities, control flow, WebSocket, and assertions —
 see [Execution Models](execution-models.md) for the `load:` block
 (`rate`, `workers`, `stages`, `iterations`).
 
+For machine-readable schema discovery, run `resonate schema`. The
+same JSON Schema is checked into the repository at
+[internal/config/scenario.schema.json](https://github.com/jecklgamis/resonate/blob/main/internal/config/scenario.schema.json).
+
 > **Treat a scenario file as trusted input, like a shell script.**
 > `body_file`/`raw_body_file`/`feeder.file` read a local path and send its
 > contents wherever the scenario specifies, and `env "VAR_NAME"` can put

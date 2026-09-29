@@ -20,6 +20,7 @@ func NewRootCommand(version string) *cobra.Command {
 
 	root.AddCommand(newHitCommand())
 	root.AddCommand(newRunCommand())
+	root.AddCommand(newSchemaCommand())
 
 	return root
 }
