@@ -14,6 +14,27 @@ If the target is slower than that (or `workers` was set too low), actual
 throughput falls short of `rate` — resonate detects this after the run and
 warns on stderr with a suggested `--workers` value.
 
+## Request Counts and the Startup Burst
+
+A run with a `rate` and a `duration` sends a little *more* than `rate × duration`:
+about `rate × duration + rate`. At `--rate 50 --duration 30s`, expect roughly 1,550
+requests rather than 1,500 (for example, 1,549).
+
+The cause is how `rate` is paced. It is a token bucket that refills at `rate` per
+second and holds up to `rate` tokens, and it **starts full**. So the first `rate`
+iterations go out immediately, and after that the run settles to `rate` per second. The
+first second therefore runs at about twice the target, and the rate from then on is
+exact. The same bucket lets workers catch up after a brief stall instead of losing that
+throughput for good.
+
+This applies to constant-rate runs: `rate` with `workers`, and the open model with
+`max_workers`. A [staged](#ramp-profiles-staged-load) run follows its schedule with no
+startup burst, and a `rate` below 1 per second has a bucket of one.
+
+If you need an exact count, stop on a count rather than on time: `--requests 1500` (or
+`load.requests`) stops after exactly that many iterations, whatever the pacing. An
+iteration of a flow or a stream is still several requests in the report.
+
 ## Open vs. Closed Model
 
 **Closed model** (the default): `workers` is a hard concurrency cap. If
