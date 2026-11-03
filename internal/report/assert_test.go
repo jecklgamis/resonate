@@ -1,6 +1,7 @@
 package report
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -218,7 +219,7 @@ func TestFailureStringRangeMentionsBothBounds(t *testing.T) {
 }
 
 func TestIsLatencyMetric(t *testing.T) {
-	for _, m := range []string{"latency_min", "latency_mean", "latency_stddev", "latency_p50", "latency_p90", "latency_p95", "latency_p99", "latency_max"} {
+	for _, m := range []string{"latency_min", "latency_mean", "latency_stddev", "latency_p50", "latency_p75", "latency_p90", "latency_p95", "latency_p99", "latency_max"} {
 		if !IsLatencyMetric(m) {
 			t.Errorf("IsLatencyMetric(%q) = false, want true", m)
 		}
@@ -343,5 +344,25 @@ func TestMetricValueCoversAllDocumentedMetrics(t *testing.T) {
 		if _, err := s.metricValue(m); err != nil {
 			t.Errorf("metricValue(%q) unexpectedly errored: %v", m, err)
 		}
+	}
+}
+
+func TestEvaluateLatencyP75IsAFixedMetric(t *testing.T) {
+	if !slices.Contains(AssertionMetrics, "latency_p75") {
+		t.Error("AssertionMetrics should list latency_p75")
+	}
+	if !IsKnownAssertionMetric("latency_p75") {
+		t.Error("latency_p75 should be a known metric")
+	}
+
+	max := 0.5
+	s := Summary{Latencies: LatencyStats{P75: 300 * time.Millisecond}}
+	if failures, err := s.Evaluate([]Assertion{{Metric: "latency_p75", Max: &max}}); err != nil || len(failures) != 0 {
+		t.Errorf("p75=300ms should satisfy <=500ms, got failures=%v err=%v", failures, err)
+	}
+	s.Latencies.P75 = 800 * time.Millisecond
+	failures, err := s.Evaluate([]Assertion{{Metric: "latency_p75", Max: &max}})
+	if err != nil || len(failures) != 1 || failures[0].Metric != "latency_p75" {
+		t.Errorf("p75=800ms should fail <=500ms, got failures=%v err=%v", failures, err)
 	}
 }

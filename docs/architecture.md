@@ -80,7 +80,8 @@ What an iteration produces:
 - **`internal/report`** — `report.go` aggregates results into latency percentiles
   (an HDR histogram, so memory is fixed), success rate, throughput and status/error
   breakdowns; `assert.go` evaluates `assertions:` against a finished `Summary`;
-  `html.go` renders the self-contained HTML report.
+  `html.go` renders the self-contained HTML report (its charts are server-side SVG
+  and CSS, with no JavaScript).
 - **`internal/config`** — the YAML scenario schema and loader, and the embedded JSON
   Schema (`scenario.schema.json`, printed by `resonate schema`).
 - **`internal/cli`** — the Cobra commands. `hit.go` and `run.go` build a generator and

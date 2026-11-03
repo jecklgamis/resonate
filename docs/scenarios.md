@@ -337,7 +337,7 @@ Each entry needs at least one condition; several combine with AND.
 Thresholds are duration strings (`"500ms"`) for `latency_*` metrics,
 plain numbers otherwise. Supported metrics: `requests`, `success`,
 `success_rate`, `error_rate`, `rate`, `latency_min`, `latency_mean`,
-`latency_stddev`, `latency_p50`, `latency_p90`, `latency_p95`,
+`latency_stddev`, `latency_p50`, `latency_p75`, `latency_p90`, `latency_p95`,
 `latency_p99`, `latency_max`, and `latency_p<N>` for any percentile `N`
 (`0`-`100`, fractional allowed — e.g. `latency_p99.9`).
 

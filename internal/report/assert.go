@@ -174,7 +174,7 @@ func formatMetricValue(metric string, v float64) string {
 // latencyPercentileMetric parses a "latency_p<N>" metric name (N a
 // percentage, 0-100, e.g. "latency_p95", "latency_p99.9") — an
 // arbitrary-percentile response time assertion, not just the fixed
-// min/mean/p50/p90/p95/p99/max/stddev names. Returns the percentage and
+// min/mean/p50/p75/p90/p95/p99/max/stddev names. Returns the percentage and
 // true if metric has that shape, false otherwise (including out-of-range).
 func latencyPercentileMetric(metric string) (pct float64, ok bool) {
 	const prefix = "latency_p"
@@ -211,6 +211,8 @@ func (s Summary) metricValue(metric string) (float64, error) {
 		return s.Latencies.StdDev.Seconds(), nil
 	case "latency_p50":
 		return s.Latencies.P50.Seconds(), nil
+	case "latency_p75":
+		return s.Latencies.P75.Seconds(), nil
 	case "latency_p90":
 		return s.Latencies.P90.Seconds(), nil
 	case "latency_p95":
@@ -254,7 +256,7 @@ func (s Summary) Evaluate(assertions []Assertion) ([]Failure, error) {
 // against this slice) to validate a metric name from user input.
 var AssertionMetrics = []string{
 	"requests", "success", "success_rate", "error_rate", "rate",
-	"latency_min", "latency_mean", "latency_stddev", "latency_p50", "latency_p90", "latency_p95", "latency_p99", "latency_max",
+	"latency_min", "latency_mean", "latency_stddev", "latency_p50", "latency_p75", "latency_p90", "latency_p95", "latency_p99", "latency_max",
 }
 
 // IsKnownAssertionMetric reports whether metric is a name Evaluate accepts

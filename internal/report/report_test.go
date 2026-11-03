@@ -2,7 +2,9 @@ package report
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,5 +152,58 @@ func TestPrintAndPrintJSONDoNotError(t *testing.T) {
 	}
 	if jsonBuf.Len() == 0 {
 		t.Error("PrintJSON produced no output")
+	}
+}
+
+func TestLatencyStatsIncludesP75BetweenP50AndP90(t *testing.T) {
+	agg := NewAggregator()
+	now := time.Now()
+	for i := 1; i <= 100; i++ { // 1ms ... 100ms
+		agg.Add(generator.Result{Timestamp: now, Latency: time.Duration(i) * time.Millisecond, StatusCode: 200})
+	}
+	s := agg.Summary(time.Second)
+
+	if d := s.Latencies.P75 - 75*time.Millisecond; d < -time.Millisecond || d > time.Millisecond {
+		t.Errorf("P75 = %v, want ~75ms", s.Latencies.P75)
+	}
+	if !(s.Latencies.P50 <= s.Latencies.P75 && s.Latencies.P75 <= s.Latencies.P90) {
+		t.Errorf("percentiles out of order: p50=%v p75=%v p90=%v", s.Latencies.P50, s.Latencies.P75, s.Latencies.P90)
+	}
+	// The fixed field and the arbitrary-percentile path must agree exactly.
+	if got := percentile(s.hist, 0.75); got != s.Latencies.P75 {
+		t.Errorf("percentile(hist, 0.75) = %v, but P75 = %v", got, s.Latencies.P75)
+	}
+}
+
+func TestSummaryJSONAndTextReportP75(t *testing.T) {
+	agg := NewAggregator()
+	now := time.Now()
+	for i := 1; i <= 100; i++ {
+		agg.Add(generator.Result{Timestamp: now, Latency: time.Duration(i) * time.Millisecond, StatusCode: 200})
+	}
+	s := agg.Summary(time.Second)
+
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"p75":`) {
+		t.Errorf("JSON has no p75 field: %s", b)
+	}
+
+	var out bytes.Buffer
+	s.Print(&out)
+	if !strings.Contains(out.String(), "[min, mean, p50, p75, p90, p95, p99, max]") {
+		t.Errorf("text summary header should list p75 between p50 and p90:\n%s", out.String())
+	}
+	line := ""
+	for _, l := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(l, "Latencies") {
+			line = l
+		}
+	}
+	values := strings.Split(strings.TrimSpace(line[strings.Index(line, "]")+1:]), ", ")
+	if len(values) != 8 { // min, mean, p50, p75, p90, p95, p99, max
+		t.Errorf("Latencies line should carry 8 values after the header, got %d: %q", len(values), line)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"math"
 	"sort"
 	"time"
 )
@@ -121,8 +122,16 @@ func sortedErrors(errors map[string]int) []errorRow {
 
 const chartW, chartH = 900.0, 220.0
 
-// throughputSVG draws a stacked bar chart of requests/sec over time
-// (success in green, failure in red-ish), one bar per TimeBucket.
+// throughputSVG draws the "Requests over time" chart: stacked bars of requests
+// per time bucket (success in green, failure in red-ish) on a grid, with the time
+// of day along the x axis and a tooltip for each bucket on hover.
+//
+// It is still plain SVG plus CSS, with no JavaScript, so the report stays a
+// static self-contained file. The hover works like this: every bucket gets a
+// transparent hit area covering its whole column (so the tooltip appears when you
+// point anywhere in the column, not just at the bar), immediately followed by its
+// tooltip group; the stylesheet shows the tooltip with `.hit:hover + .tip`. All the
+// hit areas and tooltips come after the bars so a tooltip is never painted under one.
 func throughputSVG(buckets []TimeBucket) template.HTML {
 	if len(buckets) == 0 {
 		return template.HTML(`<p class="empty">No data.</p>`)
@@ -133,46 +142,136 @@ func throughputSVG(buckets []TimeBucket) template.HTML {
 			maxReq = b.Requests
 		}
 	}
+	width := bucketWidth(buckets)
 
-	const padL, padB = 40.0, 20.0
+	// Scale the y axis to a round top (e.g. 100, not 97) so the gridlines fall on
+	// round numbers.
+	step := niceStep(float64(maxReq), 4)
+	top := math.Ceil(float64(maxReq)/step) * step
+
+	const padL, padB, padT = 40.0, 22.0, 4.0
 	plotW := chartW - padL - 4
-	plotH := chartH - padB - 4
+	plotH := chartH - padB - padT
 	barW := plotW / float64(len(buckets))
 
 	buf := &htmlBuf{}
 	buf.writeHeader()
-	// y-axis gridlines/labels (0, max/2, max)
-	for i := 0; i <= 2; i++ {
-		frac := float64(i) / 2
-		y := 4 + plotH*(1-frac)
-		val := int(float64(maxReq) * frac)
+
+	// Horizontal gridlines with the request count.
+	for v := 0.0; v <= top+step/1000; v += step {
+		y := padT + plotH*(1-v/top)
 		buf.WriteString(fmt.Sprintf(`<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" class="grid"/>`, padL, y, chartW-2, y))
-		buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis">%d</text>`, padL-6, y+4, val))
+		buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="end">%d</text>`, padL-6, y+3.5, int(v+0.5)))
 	}
-	for i, b := range buckets {
-		successFrac := 0.0
-		failFrac := 0.0
-		if b.Requests > 0 {
-			successFrac = float64(b.Success) / float64(maxReq)
-			failFrac = float64(b.Requests-b.Success) / float64(maxReq)
+	// Vertical gridlines with the time of day, at bucket boundaries.
+	every := tickEvery(len(buckets), int(plotW/80))
+	for i := 0; i < len(buckets); i += every {
+		x := padL + float64(i)*barW
+		buf.WriteString(fmt.Sprintf(`<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" class="grid grid-v"/>`, x, padT, x, padT+plotH))
+		// A label centred on a gridline near the right border would be clipped, so
+		// those are right-aligned to the border instead.
+		anchor, lx := "middle", x
+		if x > chartW-32 {
+			anchor, lx = "end", chartW-2
 		}
+		buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="%s">%s</text>`, lx, chartH-7, anchor, buckets[i].Start.Format("15:04:05")))
+	}
+	if width != time.Second {
+		// Past 120s a run is split into ~120 buckets, so a bar is no longer one second.
+		buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="end">each bar = %s</text>`, chartW-4, padT+11, width.Round(time.Millisecond)))
+	}
+
+	for i, b := range buckets {
+		if b.Requests == 0 {
+			continue
+		}
+		successFrac := float64(b.Success) / top
+		failFrac := float64(b.Requests-b.Success) / top
 		x := padL + float64(i)*barW
 		failH := plotH * failFrac
 		succH := plotH * successFrac
-		y := 4 + plotH - succH - failH
-		if b.Requests > 0 {
-			buf.WriteString(fmt.Sprintf(`<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" class="bar-success"><title>%s: %d req (%d ok)</title></rect>`,
-				x, y, maxF(barW-0.5, 0.5), succH, b.Start.Format("15:04:05"), b.Requests, b.Success))
-			if failH > 0 {
-				buf.WriteString(fmt.Sprintf(`<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" class="bar-fail"><title>%s: %d failed</title></rect>`,
-					x, y+succH, maxF(barW-0.5, 0.5), failH, b.Start.Format("15:04:05"), b.Requests-b.Success))
-			}
+		y := padT + plotH - succH - failH
+		buf.WriteString(fmt.Sprintf(`<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" class="bar-success"/>`,
+			x, y, maxF(barW-0.5, 0.5), succH))
+		if failH > 0 {
+			buf.WriteString(fmt.Sprintf(`<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" class="bar-fail"/>`,
+				x, y+succH, maxF(barW-0.5, 0.5), failH))
 		}
 	}
-	buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis">%s</text>`, padL, chartH-4, buckets[0].Start.Format("15:04:05")))
-	buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="end">%s</text>`, chartW-2, chartH-4, buckets[len(buckets)-1].Start.Format("15:04:05")))
+
+	// Hover layer: one transparent column per bucket, each followed by its tooltip.
+	const tipW, tipH = 196.0, 54.0
+	for i, b := range buckets {
+		x := padL + float64(i)*barW
+		buf.WriteString(fmt.Sprintf(`<rect x="%.2f" y="%.1f" width="%.2f" height="%.1f" class="hit"/>`, x, padT, barW, plotH))
+
+		tx := x + barW + 6
+		if tx+tipW > chartW-2 { // near the right edge: open to the left of the column
+			tx = x - 6 - tipW
+		}
+		ty := padT + 4
+		buf.WriteString(fmt.Sprintf(`<g class="tip"><rect x="%.1f" y="%.1f" width="%.0f" height="%.0f" rx="4" class="tip-bg"/>`, tx, ty, tipW, tipH))
+		buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="tip-t">%s  (+%s)</text>`, tx+9, ty+15,
+			b.Start.Format("15:04:05"), b.Start.Sub(buckets[0].Start).Round(time.Second)))
+		if b.Requests == 0 {
+			buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="tip-v">no requests</text>`, tx+9, ty+34))
+		} else {
+			buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="tip-v">%d requests (%d ok, %d failed)</text>`,
+				tx+9, ty+34, b.Requests, b.Success, b.Requests-b.Success))
+			buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="tip-m">%.1f/s · mean %s</text>`,
+				tx+9, ty+48, float64(b.Requests)/width.Seconds(), b.Mean.Round(time.Microsecond)))
+		}
+		buf.WriteString(`</g>`)
+	}
 	buf.writeFooter()
 	return template.HTML(buf.String())
+}
+
+// bucketWidth is the span one TimeBucket covers: the gap between neighbouring
+// buckets, or a second for a one-bucket series.
+func bucketWidth(buckets []TimeBucket) time.Duration {
+	if len(buckets) >= 2 {
+		if d := buckets[1].Start.Sub(buckets[0].Start); d > 0 {
+			return d
+		}
+	}
+	return time.Second
+}
+
+// niceStep picks a round axis step (1, 2 or 5 times a power of ten, and at least
+// 1, since these are counts) so that about `ticks` steps cover max.
+func niceStep(max float64, ticks int) float64 {
+	if max <= 0 || ticks <= 0 {
+		return 1
+	}
+	raw := max / float64(ticks)
+	exp := math.Pow(10, math.Floor(math.Log10(raw)))
+	var nice float64
+	switch f := raw / exp; {
+	case f <= 1:
+		nice = 1
+	case f <= 2:
+		nice = 2
+	case f <= 5:
+		nice = 5
+	default:
+		nice = 10
+	}
+	return math.Max(nice*exp, 1)
+}
+
+// tickEvery returns how many buckets apart to place time labels so that a series
+// of n buckets gets at most maxLabels of them, using round spacings.
+func tickEvery(n, maxLabels int) int {
+	if maxLabels < 2 {
+		maxLabels = 2
+	}
+	for _, e := range []int{1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600, 1200, 3600} {
+		if (n+e-1)/e <= maxLabels {
+			return e
+		}
+	}
+	return 3600
 }
 
 // histogramSVG draws a response-time distribution bar chart from bins.

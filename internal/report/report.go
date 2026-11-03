@@ -122,7 +122,7 @@ type Summary struct {
 	PeakConcurrency int  `json:"peak_concurrency,omitempty"`
 
 	// hist backs Evaluate's arbitrary-percentile assertions
-	// ("latency_p97.5", not just the fixed P50/P90/P95/P99 above) — kept
+	// ("latency_p97.5", not just the fixed P50/P75/P90/P95/P99 above) — kept
 	// unexported (so it never appears in --json output).
 	hist *hdrhistogram.Histogram
 }
@@ -132,6 +132,7 @@ type LatencyStats struct {
 	Mean   time.Duration `json:"mean"`
 	StdDev time.Duration `json:"stddev"`
 	P50    time.Duration `json:"p50"`
+	P75    time.Duration `json:"p75"`
 	P90    time.Duration `json:"p90"`
 	P95    time.Duration `json:"p95"`
 	P99    time.Duration `json:"p99"`
@@ -286,6 +287,7 @@ func latencyStats(h *hdrhistogram.Histogram, min, max time.Duration) LatencyStat
 		Mean:   time.Duration(h.Mean()),
 		StdDev: time.Duration(h.StdDev()),
 		P50:    percentile(h, 0.50),
+		P75:    percentile(h, 0.75),
 		P90:    percentile(h, 0.90),
 		P95:    percentile(h, 0.95),
 		P99:    percentile(h, 0.99),
@@ -294,7 +296,7 @@ func latencyStats(h *hdrhistogram.Histogram, min, max time.Duration) LatencyStat
 }
 
 // percentile returns the p-th percentile (p in [0, 1]) of h — shared by
-// latencyStats' fixed P50/P90/P95/P99 and Evaluate's arbitrary-percentile
+// latencyStats' fixed P50/P75/P90/P95/P99 and Evaluate's arbitrary-percentile
 // assertions, so both use identical math. A nil histogram yields 0.
 func percentile(h *hdrhistogram.Histogram, p float64) time.Duration {
 	if h == nil || h.TotalCount() == 0 {
@@ -308,10 +310,11 @@ func (s Summary) Print(w io.Writer) {
 	fmt.Fprintf(w, "Requests      [total, rate]            %d, %.2f/sec\n", s.Requests, s.Rate)
 	fmt.Fprintf(w, "Duration      [total]                  %s\n", s.Duration.Round(time.Millisecond))
 	fmt.Fprintf(w, "Success       [ratio]                  %.2f%%\n", s.SuccessRate*100)
-	fmt.Fprintf(w, "Latencies     [min, mean, p50, p90, p95, p99, max]  %s, %s, %s, %s, %s, %s, %s\n",
+	fmt.Fprintf(w, "Latencies     [min, mean, p50, p75, p90, p95, p99, max]  %s, %s, %s, %s, %s, %s, %s, %s\n",
 		s.Latencies.Min.Round(time.Microsecond),
 		s.Latencies.Mean.Round(time.Microsecond),
 		s.Latencies.P50.Round(time.Microsecond),
+		s.Latencies.P75.Round(time.Microsecond),
 		s.Latencies.P90.Round(time.Microsecond),
 		s.Latencies.P95.Round(time.Microsecond),
 		s.Latencies.P99.Round(time.Microsecond),
