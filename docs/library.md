@@ -170,7 +170,8 @@ if err := resonate.WriteHTMLFile("report.html", summary.HTMLReport()); err != ni
 struct-literal API it's built on is still available for cases that want
 more control (e.g. building a `Generator` once and driving it with your
 own retry loop) — `resonate.NewHTTPGenerator`, `resonate.NewFlowGenerator`,
-`resonate.NewWSGenerator`, `resonate.NewGRPCGenerator`, `resonate.Feeder`,
+`resonate.NewWSGenerator`, `resonate.NewSSEGenerator`,
+`resonate.NewGRPCGenerator`, `resonate.Feeder`,
 `resonate.Run`, `resonate.Summary`, `resonate.Assertion`/`Evaluate` cover
 the same ground as `resonate hit`/`resonate run`, as Go APIs instead of
 flags/YAML:
@@ -192,6 +193,34 @@ summary.Print(os.Stdout)
 See [`resonate_test.go`](https://github.com/jecklgamis/resonate/blob/main/resonate_test.go)
 for worked examples (a plain HTTP run, a multi-step flow, assertions, a
 feeder, gRPC unary and streaming) written using only this public package.
+
+### Server-Sent Events
+
+Like gRPC, SSE is available through the struct API only; the fluent `Scenario`
+builder has no SSE methods. An `SSETarget` is one stream's request plus when to
+stop reading it; the fields match the
+[`sse:` scenario block](scenarios.md#server-sent-events).
+
+```go
+opts := resonate.DefaultSSEOptions()
+opts.Identities = []map[string]string{{"token": "abc123"}}
+
+gen, err := resonate.NewSSEGenerator(resonate.SSETarget{
+	URL:      "http://localhost:8080/events",
+	Header:   map[string]string{"Authorization": "Bearer {{.Identity.token}}"},
+	Events:   10,               // succeed once 10 events arrive...
+	Duration: 15 * time.Second, // ...or fail if they haven't by then
+}, opts)
+if err != nil {
+	log.Fatal(err)
+}
+defer gen.Close()
+
+summary := resonate.Run(ctx, gen, resonate.Options{Workers: 20, Duration: 30 * time.Second})
+```
+
+A stream is one connect `Result` plus one per event; `opts.HTTP` carries the
+usual transport settings (`Timeout`, `Insecure`, certificates, ...).
 
 ### gRPC
 

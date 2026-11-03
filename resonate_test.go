@@ -240,3 +240,34 @@ func TestGRPCStreamingRunEndToEnd(t *testing.T) {
 		t.Errorf("summary = %d requests, %v success rate; want 5 and 1", summary.Requests, summary.SuccessRate)
 	}
 }
+
+func TestSSEGeneratorRunEndToEnd(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		for i := 0; i < 3; i++ {
+			w.Write([]byte("data: tick\n\n"))
+			w.(http.Flusher).Flush()
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	gen, err := resonate.NewSSEGenerator(
+		resonate.SSETarget{URL: srv.URL, Events: 3},
+		resonate.DefaultSSEOptions(),
+	)
+	if err != nil {
+		t.Fatalf("NewSSEGenerator error: %v", err)
+	}
+	defer gen.Close()
+
+	summary := resonate.Run(context.Background(), gen, resonate.Options{Requests: 2, Workers: 1})
+
+	// 2 iterations * (1 connect + 3 events).
+	if summary.Requests != 8 {
+		t.Errorf("Requests = %d, want 8", summary.Requests)
+	}
+	if summary.SuccessRate != 1 {
+		t.Errorf("SuccessRate = %v, want 1", summary.SuccessRate)
+	}
+}

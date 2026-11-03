@@ -580,3 +580,42 @@ grpc:
 		t.Error("expected an error for an unparseable send_interval")
 	}
 }
+
+func TestLoadSSEScenario(t *testing.T) {
+	path := writeTempFile(t, "scenario.yaml", `
+protocol: sse
+
+load:
+  duration: 10s
+  workers: 5
+
+sse:
+  url: https://api.example.com/stream
+  method: POST
+  headers:
+    Authorization: Bearer {{.Identity.token}}
+  body: '{"q":"hi"}'
+  events: 10
+  duration: 30s
+  timeout: 5s
+  insecure: true
+  identities:
+    - token: a
+`)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if s.Protocol != "sse" || s.SSE.URL != "https://api.example.com/stream" || s.SSE.Method != "POST" {
+		t.Errorf("unexpected scenario: %+v", s.SSE)
+	}
+	if s.SSE.Events != 10 || !s.SSE.Insecure || len(s.SSE.Identities) != 1 {
+		t.Errorf("unexpected sse fields: %+v", s.SSE)
+	}
+	if d, err := s.SSE.ParsedDuration(); err != nil || d != 30*time.Second {
+		t.Errorf("ParsedDuration = %v, %v; want 30s", d, err)
+	}
+	if d, err := (SSEConfig{}).ParsedDuration(); err != nil || d != 0 {
+		t.Errorf("unset ParsedDuration = %v, %v; want 0", d, err)
+	}
+}

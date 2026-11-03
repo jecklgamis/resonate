@@ -20,7 +20,8 @@ four report formats (see [Reports](reports.md)).
 - **`internal/generator`** — protocol-agnostic `Generator` interface plus
   `HTTPGenerator` (independent requests), `FlowGenerator` (multi-step,
   response chaining, per-worker identities), `WSGenerator` (WebSocket),
-  and `GRPCGenerator` (gRPC: unary and server-/client-/bidirectional-
+  `SSEGenerator` (Server-Sent Events, built on the same request-building code
+  as `HTTPGenerator`), and `GRPCGenerator` (gRPC: unary and server-/client-/bidirectional-
   streaming, with the schema from reflection, `.proto` files or a
   descriptor set).
 - **`internal/tmpl`** — per-request templating (`{{ }}`) for URLs, query

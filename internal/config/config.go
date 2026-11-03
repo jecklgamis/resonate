@@ -11,11 +11,12 @@ import (
 
 // Scenario is the top-level shape of a resonate config file.
 type Scenario struct {
-	Protocol   string            `yaml:"protocol"` // "http", "ws" or "grpc"
+	Protocol   string            `yaml:"protocol"` // "http", "ws", "grpc" or "sse"
 	Load       LoadConfig        `yaml:"load"`
 	HTTP       HTTPConfig        `yaml:"http"`
 	WS         WSConfig          `yaml:"ws"`
 	GRPC       GRPCConfig        `yaml:"grpc"`
+	SSE        SSEConfig         `yaml:"sse"`
 	Assertions []AssertionConfig `yaml:"assertions"`
 }
 
@@ -365,6 +366,60 @@ type WSMessageConfig struct {
 	// rule language as Extract (json:<path>/yaml:<path>/xml:<path> only,
 	// same caveat as Extract) — only meaningful alongside Wait: true.
 	ExpectBody map[string]string `yaml:"expect_body"`
+}
+
+// SSEConfig describes one Server-Sent Events stream, opened fresh every
+// iteration: send the request, read the text/event-stream response until
+// Events events have arrived and/or Duration has elapsed, close. See
+// internal/generator.SSETarget for the exact stop/failure semantics.
+// URL, Query, Headers and Body may embed {{ }} template expressions.
+type SSEConfig struct {
+	URL     string            `yaml:"url"`
+	Method  string            `yaml:"method"` // default GET; POST is common for streaming APIs
+	Query   map[string]string `yaml:"query"`
+	Headers map[string]string `yaml:"headers"`
+
+	Body        string `yaml:"body"`
+	BodyFile    string `yaml:"body_file"`
+	RawBodyFile string `yaml:"raw_body_file"`
+
+	// Events, if > 0, ends the stream successfully after this many events.
+	Events int `yaml:"events"`
+
+	// Duration, if set, is how long to listen (a normal, successful end when
+	// Events is unset; a deadline for receiving them when it is set).
+	Duration string `yaml:"duration"`
+
+	// Identities: an optional pool of named values (e.g. tokens), one
+	// assigned per virtual user and exposed as {{.Identity.<key>}}.
+	Identities []map[string]string `yaml:"identities"`
+
+	// Feeder: an optional CSV/JSON data source, one row per iteration,
+	// exposed as {{.Feeder.<column>}}.
+	Feeder FeederConfig `yaml:"feeder"`
+
+	// Timeout bounds connecting and receiving response headers — not the
+	// stream itself, which Events/Duration bound.
+	Timeout  string `yaml:"timeout"`
+	Insecure bool   `yaml:"insecure"`
+
+	// MaxResponseBody caps the bytes read per stream (0 = unlimited).
+	MaxResponseBody int64 `yaml:"max_response_body"`
+
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+	CAFile   string `yaml:"ca_file"`
+
+	// H2C forces prior-knowledge HTTP/2 over plaintext, like http.h2c.
+	H2C bool `yaml:"h2c"`
+}
+
+// ParsedDuration parses SSEConfig.Duration, returning 0 if unset.
+func (c SSEConfig) ParsedDuration() (time.Duration, error) {
+	if c.Duration == "" {
+		return 0, nil
+	}
+	return time.ParseDuration(c.Duration)
 }
 
 // GRPCConfig describes gRPC calls — unary and streaming: each iteration makes

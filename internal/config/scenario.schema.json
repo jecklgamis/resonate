@@ -8,7 +8,7 @@
   "properties": {
     "protocol": {
       "type": "string",
-      "enum": ["http", "ws", "grpc"],
+      "enum": ["http", "ws", "grpc", "sse"],
       "default": "http",
       "description": "Scenario protocol. Defaults to HTTP."
     },
@@ -23,6 +23,9 @@
     },
     "grpc": {
       "$ref": "#/$defs/grpc"
+    },
+    "sse": {
+      "$ref": "#/$defs/sse"
     },
     "assertions": {
       "type": "array",
@@ -51,6 +54,9 @@
             },
             {
               "required": ["grpc"]
+            },
+            {
+              "required": ["sse"]
             }
           ]
         }
@@ -73,21 +79,53 @@
               },
               {
                 "required": ["ws"]
+              },
+              {
+                "required": ["sse"]
               }
             ]
           }
         },
         "else": {
-          "required": ["http"],
-          "not": {
-            "anyOf": [
-              {
-                "required": ["ws"]
-              },
-              {
-                "required": ["grpc"]
+          "if": {
+            "properties": {
+              "protocol": {
+                "const": "sse"
               }
-            ]
+            },
+            "required": ["protocol"]
+          },
+          "then": {
+            "required": ["sse"],
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["http"]
+                },
+                {
+                  "required": ["ws"]
+                },
+                {
+                  "required": ["grpc"]
+                }
+              ]
+            }
+          },
+          "else": {
+            "required": ["http"],
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["ws"]
+                },
+                {
+                  "required": ["grpc"]
+                },
+                {
+                  "required": ["sse"]
+                }
+              ]
+            }
           }
         }
       }
@@ -677,6 +715,82 @@
         }
       },
       "required": ["method"]
+    },
+    "sse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A Server-Sent Events stream, opened fresh every iteration and read until events and/or duration is reached.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^(https?://|\\{\\{)",
+          "description": "Stream URL; supports templates."
+        },
+        "method": {
+          "type": "string",
+          "description": "HTTP method; defaults to GET."
+        },
+        "query": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "headers": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "body": {
+          "type": "string",
+          "description": "Request body template."
+        },
+        "body_file": {
+          "type": "string",
+          "description": "Path to a request body file; its contents are templated."
+        },
+        "raw_body_file": {
+          "type": "string",
+          "description": "Path to a request body file sent as-is, without templating. Takes priority over body and body_file."
+        },
+        "events": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "End the stream successfully after this many events; the stream closing or duration/timeout elapsing first is a failure. 0 means no event target."
+        },
+        "duration": {
+          "$ref": "#/$defs/duration"
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "insecure": {
+          "type": "boolean"
+        },
+        "max_response_body": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum bytes read per stream; 0 is unlimited."
+        },
+        "cert_file": {
+          "type": "string"
+        },
+        "key_file": {
+          "type": "string"
+        },
+        "ca_file": {
+          "type": "string"
+        },
+        "h2c": {
+          "type": "boolean",
+          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options."
+        }
+      },
+      "required": ["url"]
     },
     "wsMessage": {
       "type": "object",

@@ -8,8 +8,9 @@ import (
 type Result = generator.Result
 
 // Generator performs one unit of work ("iteration") and reports the result
-// of each HTTP call it made. See the three implementations below
-// (HTTPGenerator, FlowGenerator, WSGenerator) and their constructors.
+// of each call it made. See the implementations below (HTTPGenerator,
+// FlowGenerator, WSGenerator, GRPCGenerator, SSEGenerator) and their
+// constructors.
 type Generator = generator.Generator
 
 // --- HTTP: independent, stateless requests ---
@@ -114,6 +115,30 @@ func DefaultGRPCOptions() GRPCOptions { return generator.DefaultGRPCOptions() }
 // trip to the server) before returning.
 func NewGRPCGenerator(target GRPCTarget, opts GRPCOptions) (*GRPCGenerator, error) {
 	return generator.NewGRPCGenerator(target, opts)
+}
+
+// --- SSE: open a Server-Sent Events stream, read events, close ---
+
+// SSETarget describes one Server-Sent Events stream: send a request, read the
+// text/event-stream response until Events events arrive and/or Duration
+// elapses, close. See the field docs for the exact stop and failure rules.
+type SSETarget = generator.SSETarget
+
+// SSEOptions configures the transport (via its HTTP field, so H2C,
+// Insecure, etc. apply) and per-virtual-user identities.
+type SSEOptions = generator.SSEOptions
+
+// SSEGenerator opens a fresh stream every iteration and reports one Result
+// for the connect plus one per event received.
+type SSEGenerator = generator.SSEGenerator
+
+// DefaultSSEOptions returns SSEOptions with resonate's usual defaults (30s
+// connect timeout, redirects followed).
+func DefaultSSEOptions() SSEOptions { return generator.DefaultSSEOptions() }
+
+// NewSSEGenerator builds a Generator that opens target fresh every iteration.
+func NewSSEGenerator(target SSETarget, opts SSEOptions) (*SSEGenerator, error) {
+	return generator.NewSSEGenerator(target, opts)
 }
 
 // --- Feeders: CSV/JSON-driven request data ---

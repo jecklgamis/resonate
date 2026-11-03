@@ -310,28 +310,25 @@ func validateLiteralURL(rawURL string) error {
 	return nil
 }
 
-// doHTTP renders f against data, sends the request over client, and returns
-// the Result. If extract is non-empty, the response body is buffered (rather
-// than streamed to io.Discard) and each extraction rule is evaluated against
-// it; successfully extracted values are returned in the second value.
-// maxBody caps how many response bytes are read/counted (0 = unlimited) —
-// the remainder, if any, is still drained to io.Discard so the connection
-// can be reused, it just isn't counted into BytesIn or buffered for extract.
-func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Data, extract map[string]string, maxBody int64) (Result, map[string]string) {
+// buildRequest renders f against data into a ready-to-send *http.Request,
+// returning the rendered body length alongside it (for BytesOut). Shared by
+// doHTTP and SSEGenerator; an error here means a template or URL failed
+// before any network I/O.
+func buildRequest(ctx context.Context, f httpFields, data tmpl.Data) (*http.Request, int, error) {
 	rawURL, err := f.url.Render(data)
 	if err != nil {
-		return Result{Timestamp: time.Now(), Error: fmt.Errorf("rendering url: %w", err), Protocol: "http"}, nil
+		return nil, 0, fmt.Errorf("rendering url: %w", err)
 	}
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
-		return Result{Timestamp: time.Now(), Error: fmt.Errorf("parsing url %q: %w", rawURL, err), Protocol: "http"}, nil
+		return nil, 0, fmt.Errorf("parsing url %q: %w", rawURL, err)
 	}
 	if len(f.query) > 0 {
 		q := parsedURL.Query()
 		for k, qf := range f.query {
 			v, err := qf.Render(data)
 			if err != nil {
-				return Result{Timestamp: time.Now(), Error: fmt.Errorf("rendering query %q: %w", k, err), Protocol: "http"}, nil
+				return nil, 0, fmt.Errorf("rendering query %q: %w", k, err)
 			}
 			q.Set(k, v)
 		}
@@ -348,7 +345,7 @@ func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Da
 	} else {
 		bodyStr, err := f.body.Render(data)
 		if err != nil {
-			return Result{Timestamp: time.Now(), Error: fmt.Errorf("rendering body: %w", err), Protocol: "http"}, nil
+			return nil, 0, fmt.Errorf("rendering body: %w", err)
 		}
 		bodyLen = len(bodyStr)
 		if bodyStr != "" {
@@ -358,14 +355,29 @@ func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Da
 
 	req, err := http.NewRequestWithContext(ctx, f.method, parsedURL.String(), bodyReader)
 	if err != nil {
-		return Result{Timestamp: time.Now(), Error: err, Protocol: "http"}, nil
+		return nil, 0, err
 	}
 	for k, hf := range f.header {
 		v, err := hf.Render(data)
 		if err != nil {
-			return Result{Timestamp: time.Now(), Error: fmt.Errorf("rendering header %q: %w", k, err), Protocol: "http"}, nil
+			return nil, 0, fmt.Errorf("rendering header %q: %w", k, err)
 		}
 		req.Header.Set(k, v)
+	}
+	return req, bodyLen, nil
+}
+
+// doHTTP renders f against data, sends the request over client, and returns
+// the Result. If extract is non-empty, the response body is buffered (rather
+// than streamed to io.Discard) and each extraction rule is evaluated against
+// it; successfully extracted values are returned in the second value.
+// maxBody caps how many response bytes are read/counted (0 = unlimited) —
+// the remainder, if any, is still drained to io.Discard so the connection
+// can be reused, it just isn't counted into BytesIn or buffered for extract.
+func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Data, extract map[string]string, maxBody int64) (Result, map[string]string) {
+	req, bodyLen, err := buildRequest(ctx, f, data)
+	if err != nil {
+		return Result{Timestamp: time.Now(), Error: err, Protocol: "http"}, nil
 	}
 
 	start := time.Now()

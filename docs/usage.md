@@ -5,7 +5,7 @@
 | | `resonate hit <url>` (CLI) | `resonate run <scenario.yaml>` (YAML) |
 | --- | --- | --- |
 | Input | CLI flags | YAML scenario file |
-| Protocol | HTTP only | HTTP, WebSocket (`protocol: ws`) or gRPC (`protocol: grpc`) |
+| Protocol | HTTP only | HTTP, WebSocket (`protocol: ws`), Server-Sent Events (`protocol: sse`) or gRPC (`protocol: grpc`) |
 | Targets | One URL | Multiple targets (round-robin), or a multi-step `flow` |
 | State across requests | None | `flow` supports response chaining (`{{.Vars.*}}`) and per-VU `identities` |
 | Setup steps | Not available | `http.setup` — runs once per VU before its first iteration |
@@ -47,7 +47,7 @@ a file instead of `-d` — the latter skips templating, so it's also the
 safe choice for a body containing literal `{{ }}`.
 
 `resonate hit` is HTTP-only, flag-driven, single-target. For WebSocket,
-gRPC, multi-target, multi-step flows, or anything reusable, use `resonate run`
+Server-Sent Events, gRPC, multi-target, multi-step flows, or anything reusable, use `resonate run`
 instead. See the [CLI Reference](cli/resonate_hit.md) for every flag.
 
 ## `resonate run` — Scenario Files
@@ -88,9 +88,10 @@ See [`examples/http-basic.yaml`](https://github.com/jecklgamis/resonate/blob/mai
 [CLI Reference](cli/resonate_run.md) for `resonate run`'s own flags.
 
 `protocol:` selects what the scenario drives: `http` (the default),
-`ws` ([WebSocket](scenarios.md#websocket)) or `grpc` (the
+`ws` ([WebSocket](scenarios.md#websocket)), `sse`
+([Server-Sent Events](scenarios.md#server-sent-events)) or `grpc` (the
 [gRPC guide](grpc.md)). The `load:` block and `assertions:` are the same for all
-three.
+four.
 
 ## Request Templating
 
@@ -225,6 +226,9 @@ Both commands fail fast, before any request is sent, on:
 - An `expect_status`/`--expect-status` code outside 100-599, a blank
   `expect_headers`/`--expect-header` name, or an `expect_body`/
   `--expect-body` rule with an unrecognized prefix.
+- For `protocol: sse`: a missing `url`, or one that isn't an absolute
+  `scheme://host` URL; a negative `events` or `duration`; and an unparseable
+  `duration` or `timeout`.
 - For `protocol: grpc`: a missing `address` or `calls`; a `method` that
   isn't `package.Service/Method`, or isn't in the schema (the error lists
   the methods the service does have); a request message that doesn't parse

@@ -2,8 +2,8 @@
 
 Scenario files (`resonate run <scenario.yaml>`) describe multi-target or
 reusable load tests in YAML. This page covers `http.targets`/`http.flow`,
-base URLs, feeders, identities, control flow, WebSocket, gRPC, and
-assertions —
+base URLs, feeders, identities, control flow, WebSocket, Server-Sent Events,
+gRPC, and assertions —
 see [Execution Models](execution-models.md) for the `load:` block
 (`rate`, `workers`, `stages`, `iterations`).
 
@@ -233,6 +233,94 @@ dial, message sequence, and close. `binary: true` on a message sends it
 as a binary frame instead of text.
 
 See [`examples/ws-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/ws-basic.yaml).
+
+## Server-Sent Events
+
+`protocol: sse` (scenario files only) opens one stream per iteration: it sends
+the request, reads the `text/event-stream` response, then closes it. Use it for
+anything that pushes events over a long-lived HTTP response — live feeds,
+notifications, and the streaming responses of many LLM and chat APIs. A fresh
+request is made every iteration; a stream is never reused.
+
+```yaml
+protocol: sse
+
+load:
+  duration: 30s
+  workers: 20
+
+sse:
+  url: http://localhost:8080/events
+  events: 10          # succeed once 10 events arrive...
+  duration: 15s       # ...or fail if they haven't within 15s
+  timeout: 5s         # bounds connecting + response headers, not the stream
+  headers:
+    Authorization: Bearer {{.Identity.token}}
+  identities:
+    - token: abc123
+    - token: def456
+```
+
+Streaming APIs usually take a `POST` with a body and send events until they are
+done, closing the stream themselves, so no `events` or `duration` is needed:
+
+```yaml
+protocol: sse
+
+load:
+  requests: 50
+  workers: 10
+
+sse:
+  url: http://localhost:8080/v1/stream
+  method: POST
+  headers:
+    Content-Type: application/json
+  body: '{"prompt":"hello from vu {{.VU}}","stream":true}'
+```
+
+`method` defaults to `GET`. `url`, `query`, `headers` and `body` support
+templates, and `body_file` / `raw_body_file` work as for HTTP. `identities` and
+`feeder` behave as for the other protocols. `insecure`, `ca_file`,
+`cert_file`/`key_file`, `h2c` and `max_response_body` (which caps the bytes read
+per stream) are available under `sse`, like their `http.*` namesakes. `resonate
+hit` has no SSE flag.
+
+**What an event is.** An event is a block of lines with at least one `data:`
+field, ended by a blank line. Several `data:` lines are still one event.
+Comment lines (`: ...`, often used as keep-alives) and blocks with no `data:`
+field aren't events and aren't counted.
+
+**When a stream ends.** `events` and `duration` decide:
+
+| `events` | `duration` | The stream ends when... | Outcome |
+| --- | --- | --- | --- |
+| `N` | unset | `N` events have arrived | Success. The server closing it first, or `timeout` elapsing first, is a failure. |
+| `N` | `D` | `N` events have arrived | Success. `D` elapsing first is a failure. |
+| unset | `D` | `D` elapses, or the server closes it | Success: a listen window. |
+| unset | unset | the server closes it | Success. **Still open at `timeout` is a failure** (the error says "set sse duration or events to end it sooner"). |
+
+That last rule is deliberate: without it a never-ending stream would pin its
+worker for the whole run. `timeout` also bounds connecting and receiving the
+response headers, so a `duration` longer than `timeout` works.
+
+**What gets reported.** Each iteration gives one *connect* result (latency = time
+to the response headers; it fails on a non-2xx/3xx status, or a `Content-Type`
+other than `text/event-stream`) plus one result per event (latency = the gap
+since the previous event, or since the headers for the first; bytes = that
+event's size on the wire, including any comment lines before it). So `requests`
+in the report counts connects *and* events, as a WebSocket scenario counts its
+connect and each message. A stream that ends unsuccessfully adds one last failed
+result with the reason, such as `stream ended after 4 of 10 events`. Results are
+held until the stream ends, so memory grows with the events per stream: give
+long-lived streams an `events` or a `duration`.
+
+A run that ends while a stream is still connecting or still open isn't counted as
+a failure. SSE doesn't reconnect or send `Last-Event-ID`, and doesn't look at
+event names or payloads; if you need to check what the events contain, that is
+what a future `expect_body` for events would be for.
+
+See [`examples/sse-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/sse-basic.yaml).
 
 ## gRPC
 

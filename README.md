@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/jecklgamis/resonate/actions/workflows/ci.yml/badge.svg)](https://github.com/jecklgamis/resonate/actions/workflows/ci.yml)
 
-A load generator for HTTP, WebSocket and gRPC: `resonate hit <url>`
+A load generator for HTTP, WebSocket, Server-Sent Events and gRPC: `resonate hit <url>`
 for quick, flag-driven one-off runs, `resonate run <scenario.yaml>` for
-reusable multi-target/multi-step/WebSocket/gRPC scenarios, and the same
+reusable multi-target/multi-step/WebSocket/SSE/gRPC scenarios, and the same
 engine as a Go library.
 
 > **Heads up**: this project is under active development and in alpha. APIs, flags, and the YAML schema may change without notice. Use at your own risk.
@@ -36,7 +36,7 @@ resonate hit http://localhost:8080/health --rate 50 --duration 30s --workers 20
 ```
 
 Every run writes a stdout summary plus `report.html`/`report.json`/
-`results.jsonl` by default. For multi-target/multi-step/WebSocket/gRPC
+`results.jsonl` by default. For multi-target/multi-step/WebSocket/SSE/gRPC
 scenarios in YAML, see [docs/usage.md](docs/usage.md) and
 [docs/scenarios.md](docs/scenarios.md); for gRPC (unary and streaming), the
 [gRPC guide](docs/grpc.md).

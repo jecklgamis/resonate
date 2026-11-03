@@ -1,10 +1,10 @@
 ## resonate
 
-Load test HTTP, WebSocket and gRPC services
+Load test HTTP, WebSocket, gRPC and SSE services
 
 ### Synopsis
 
-resonate drives configurable load against HTTP, WebSocket and gRPC targets.
+resonate drives configurable load against HTTP, WebSocket, gRPC and Server-Sent Events targets.
 
 Quick start:
   resonate hit https://example.com --duration 2s
