@@ -43,6 +43,7 @@ four report formats (see [Reports](reports.md)).
   examples call, with the schemas in `examples/proto`; it access-logs every
   call it receives. `examples/testsseserver` does the same for the SSE examples
   (`make example-sse-server`): a stdlib-only SSE server with an access log. See
+  [the SSE guide](sse.md#the-example-server). See
   [the gRPC guide](grpc.md#the-example-server).
 
 For the deeper design rationale (why `runStaged` doesn't use

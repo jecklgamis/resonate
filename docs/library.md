@@ -199,7 +199,7 @@ feeder, gRPC unary and streaming) written using only this public package.
 Like gRPC, SSE is available through the struct API only; the fluent `Scenario`
 builder has no SSE methods. An `SSETarget` is one stream's request plus when to
 stop reading it; the fields match the
-[`sse:` scenario block](scenarios.md#server-sent-events).
+[`sse:` scenario block](sse.md).
 
 ```go
 opts := resonate.DefaultSSEOptions()

@@ -3,6 +3,7 @@
 - [Usage](usage.md)
 - [Scenarios](scenarios.md)
 - [gRPC](grpc.md)
+- [Server-Sent Events](sse.md)
 - [Execution Models](execution-models.md)
 - [Reports](reports.md)
 - [Library](library.md)

@@ -89,7 +89,7 @@ See [`examples/http-basic.yaml`](https://github.com/jecklgamis/resonate/blob/mai
 
 `protocol:` selects what the scenario drives: `http` (the default),
 `ws` ([WebSocket](scenarios.md#websocket)), `sse`
-([Server-Sent Events](scenarios.md#server-sent-events)) or `grpc` (the
+([Server-Sent Events guide](sse.md)) or `grpc` (the
 [gRPC guide](grpc.md)). The `load:` block and `assertions:` are the same for all
 four.
 

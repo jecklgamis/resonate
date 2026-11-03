@@ -25,7 +25,7 @@ for the repo's top-level overview, see its
 | Base URL & file bodies | `base_url` to avoid repeating a host per target; templated or raw file-sourced request bodies for large/binary payloads |
 | Response checks | Per-request `expect_status`/`expect_headers`/`expect_body`, matched via JSONPath, XPath, regex, or CSS selectors, overriding the default 2xx/3xx success criterion |
 | WebSocket support | Connect, send/receive a message sequence, chain extracted values the same way HTTP flows do |
-| Server-Sent Events | Open a stream per iteration, read N events and/or for a duration; reports time-to-headers and per-event gaps (`protocol: sse`) |
+| Server-Sent Events | Open a stream per iteration, read N events and/or for a duration; reports time-to-headers and per-event gaps (`protocol: sse`). See the [SSE guide](sse.md) |
 | gRPC support | Unary and server-/client-/bidirectional-streaming calls, with the schema from server reflection, `.proto` files or a descriptor set; JSON messages with templating, metadata, response chaining, status-code and body checks (`protocol: grpc`). See the [gRPC guide](grpc.md) |
 | Assertions / CI gating | Non-zero exit on a failed threshold — `resonate hit --assert 'metric<op>threshold'` or a scenario file's `assertions:` (richer condition set: `gt`/`lt`/`is`/`in`/`around`/`deviatesAround`) |
 | Reporting | Four formats every run by default: stdout summary, self-contained HTML, JSON, raw per-request JSON Lines dump |
@@ -66,10 +66,13 @@ what each of the four report formats contains.
 - **[Usage](usage.md)** — `resonate hit` vs. `resonate run`, request
   templating, status code checks, live progress, dry runs.
 - **[Scenarios](scenarios.md)** — the YAML schema: targets, feeders, flows,
-  identities, WebSocket, Server-Sent Events, assertions (and a pointer to gRPC).
+  identities, WebSocket, assertions (and pointers to Server-Sent Events and gRPC).
 - **[gRPC](grpc.md)** — the full guide: unary and streaming calls, schema
   sources, messages, auth, checks, results, troubleshooting, and a runnable
   example server.
+- **[Server-Sent Events](sse.md)** — the full guide: streams, ending them,
+  what gets reported, load profiles, troubleshooting, and a runnable example
+  server.
 - **[Execution Models](execution-models.md)** — workers, rate, open vs.
   closed model, ramp profiles, virtual user lifecycle.
 - **[Reports](reports.md)** — the stdout summary, HTML report, JSON

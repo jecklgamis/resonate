@@ -236,11 +236,11 @@ See [`examples/ws-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/
 
 ## Server-Sent Events
 
-`protocol: sse` (scenario files only) opens one stream per iteration: it sends
-the request, reads the `text/event-stream` response, then closes it. Use it for
-anything that pushes events over a long-lived HTTP response — live feeds,
-notifications, and the streaming responses of many LLM and chat APIs. A fresh
-request is made every iteration; a stream is never reused.
+`protocol: sse` (scenario files only) opens one stream per iteration: it sends the
+request, reads the `text/event-stream` response, then closes it. Use it for anything
+that pushes events over a long-lived HTTP response: live feeds, notifications, and the
+streaming responses of many LLM and chat APIs. Each iteration reports one connect
+result plus one result per event.
 
 ```yaml
 protocol: sse
@@ -261,116 +261,9 @@ sse:
     - token: def456
 ```
 
-Streaming APIs usually take a `POST` with a body and send events until they are
-done, closing the stream themselves, so no `events` or `duration` is needed:
-
-```yaml
-protocol: sse
-
-load:
-  requests: 50
-  workers: 10
-
-sse:
-  url: http://localhost:8765/v1/stream
-  method: POST
-  headers:
-    Content-Type: application/json
-  body: '{"prompt":"hello from vu {{.VU}}","stream":true}'
-```
-
-`method` defaults to `GET`. `url`, `query`, `headers` and `body` support
-templates, and `body_file` / `raw_body_file` work as for HTTP. `identities` and
-`feeder` behave as for the other protocols. `insecure`, `ca_file`,
-`cert_file`/`key_file`, `h2c` and `max_response_body` (which caps the bytes read
-per stream) are available under `sse`, like their `http.*` namesakes. `resonate
-hit` has no SSE flag.
-
-**What an event is.** An event is a block of lines with at least one `data:`
-field, ended by a blank line. Several `data:` lines are still one event.
-Comment lines (`: ...`, often used as keep-alives) and blocks with no `data:`
-field aren't events and aren't counted.
-
-**When a stream ends.** `events` and `duration` decide:
-
-| `events` | `duration` | The stream ends when... | Outcome |
-| --- | --- | --- | --- |
-| `N` | unset | `N` events have arrived | Success. The server closing it first, or `timeout` elapsing first, is a failure. |
-| `N` | `D` | `N` events have arrived | Success. `D` elapsing first is a failure. |
-| unset | `D` | `D` elapses, or the server closes it | Success: a listen window. |
-| unset | unset | the server closes it | Success. **Still open at `timeout` is a failure** (the error says "set sse duration or events to end it sooner"). |
-
-That last rule is deliberate: without it a never-ending stream would pin its
-worker for the whole run. `timeout` also bounds connecting and receiving the
-response headers, so a `duration` longer than `timeout` works.
-
-**What gets reported.** Each iteration gives one *connect* result (latency = time
-to the response headers; it fails on a non-2xx/3xx status, or a `Content-Type`
-other than `text/event-stream`) plus one result per event (latency = the gap
-since the previous event, or since the headers for the first; bytes = that
-event's size on the wire, including any comment lines before it). So `requests`
-in the report counts connects *and* events, as a WebSocket scenario counts its
-connect and each message. A stream that ends unsuccessfully adds one last failed
-result with the reason, such as `stream ended after 4 of 10 events`. Results are
-held until the stream ends, so memory grows with the events per stream: give
-long-lived streams an `events` or a `duration`.
-
-A run that ends while a stream is still connecting or still open isn't counted as
-a failure. SSE doesn't reconnect or send `Last-Event-ID`, and doesn't look at
-event names or payloads; if you need to check what the events contain, that is
-what a future `expect_body` for events would be for.
-
-See [`examples/sse-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/sse-basic.yaml)
-(a `GET` that reads 10 events) and
-[`examples/sse-post.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/sse-post.yaml)
-(a streaming API called with a `POST`).
-
-### Trying the SSE examples
-
-`examples/testsseserver` is a small Server-Sent Events server (standard library
-only) that serves what the SSE examples and the scenarios above call, so you can
-run and validate them without a service of your own. It keeps no state, so it is a
-demo target and not a benchmark.
-
-```sh
-make example-sse-server                  # listens on :8765
-resonate run examples/sse-basic.yaml --dry-run
-resonate run examples/sse-post.yaml --dry-run
-```
-
-| Endpoint | What it does | What it shows |
-| --- | --- | --- |
-| `GET /events` | Sends 12 events 20ms apart (with a keep-alive comment before every fourth), then closes. `?n=` and `?interval=` override. | `events: 10` ending a stream the server would have kept going. |
-| `POST /v1/stream` | An LLM-style API: streams the `prompt` a word at a time as `{"token": ...}` events, then `[DONE]`, then closes. A missing or empty prompt is a `400`. | A stream the server ends itself, so no `events` or `duration`. |
-| `GET /endless` | Never ends. | A stream with no bound failing at `timeout`. |
-| `GET /json` | A `200` that isn't an event stream. | The content-type check. |
-| `GET /error` | `503`, or the status in `?code=`. | A non-2xx connect. |
-| `GET /healthz` | `ok`. | That the server is up. |
-
-Flags: `-addr` (default `:8765`; a scenario's `url` must name the same port),
-`-events` (the `/events` count, default 12), `-event-interval` (default 20ms),
-`-log-requests` and `-stats-interval` (below).
-
-**Logging.** The server logs like an access log: a `call` line when a request
-arrives and a `done` line when it finishes (status, duration, events sent, bytes),
-plus a line about what each stream did. A stream shows up the moment it opens, not
-only when it ends, and credentials are never echoed (only the scheme of an
-`Authorization` header). When resonate reads its `events` and hangs up, the server
-notices:
-
-```text
-call GET   /events                from=[::1]:51843 auth=Bearer
-events: stream opened, 12 events 20ms apart
-events: client went away after 10 of 12 events
-done GET   /events                200 204.514ms events=10 bytes=372 from=[::1]:51843
-```
-
-That is a lot of output under load, so for a performance run pass
-`-log-requests=false` (`make example-sse-server ARGS=-log-requests=false`): the
-per-request lines stop and, every `-stats-interval` (default 10s) while there is
-traffic, one summary line is printed instead. A request counts as failed when the
-server returns a 5xx; a 4xx, such as the `400` for a missing prompt, is the client's
-doing and doesn't. Ctrl-C prints the totals and shuts down.
+Everything else — the request fields, what counts as an event, when a stream ends
+(`events` and `duration`), what gets reported, load profiles, troubleshooting, and a
+runnable example server — is in the **[Server-Sent Events guide](sse.md)**.
 
 ## gRPC
 

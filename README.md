@@ -39,7 +39,7 @@ Every run writes a stdout summary plus `report.html`/`report.json`/
 `results.jsonl` by default. For multi-target/multi-step/WebSocket/SSE/gRPC
 scenarios in YAML, see [docs/usage.md](docs/usage.md) and
 [docs/scenarios.md](docs/scenarios.md); for gRPC (unary and streaming), the
-[gRPC guide](docs/grpc.md).
+[gRPC guide](docs/grpc.md); for Server-Sent Events, the [SSE guide](docs/sse.md).
 
 ## Go library
 

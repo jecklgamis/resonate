@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -154,36 +155,58 @@ func TestShippedExamplesRunAgainstTheExampleServer(t *testing.T) {
 	}
 }
 
-// The SSE scenarios in the docs target this server's endpoints, so unlike the
-// version of this check that runs against a generic server, they run here
-// against the endpoints they name.
+// docBlock is one complete `protocol: sse` scenario found in a docs page. A block
+// preceded by an invisible `<!-- docs-test: parse-only -->` comment is only
+// strict-parsed, not run (it is a long-running illustration).
+type docBlock struct {
+	src       string
+	parseOnly bool
+}
+
+var sseDocFence = regexp.MustCompile("(?s)(<!-- docs-test: parse-only -->\n)?```yaml\n(.*?)```")
+
+func sseDocBlocks(md string) []docBlock {
+	var out []docBlock
+	for _, m := range sseDocFence.FindAllStringSubmatch(md, -1) {
+		if strings.HasPrefix(strings.TrimSpace(m[2]), "protocol: sse") {
+			out = append(out, docBlock{src: m[2], parseOnly: m[1] != ""})
+		}
+	}
+	return out
+}
+
+// The SSE scenarios in the docs target this server's endpoints, so they run here
+// against the endpoints they name (only the host is rewritten).
 func TestDocumentedSSEScenariosRunAgainstTheExampleServer(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "scenarios.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	srv := startServer(t, defaults)
-	fence := regexp.MustCompile("(?s)```yaml\n(.*?)```")
-	n := 0
-	for _, m := range fence.FindAllStringSubmatch(string(b), -1) {
-		if !strings.HasPrefix(strings.TrimSpace(m[1]), "protocol: sse") {
-			continue
+	total, ran := 0, 0
+	for _, page := range []string{"sse.md", "scenarios.md"} {
+		b, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", page))
+		if err != nil {
+			t.Fatal(err)
 		}
-		n++
-		dec := yaml.NewDecoder(strings.NewReader(m[1]))
-		dec.KnownFields(true)
-		var sc config.Scenario
-		if err := dec.Decode(&sc); err != nil {
-			t.Errorf("SSE scenario %d doesn't parse strictly: %v\n%s", n, err, m[1])
-			continue
-		}
-		s := runScenario(t, sc, srv, 3)
-		if s.SuccessRate != 1 || s.Requests == 0 {
-			t.Errorf("SSE scenario %d against the example server: %+v\n%s", n, s, m[1])
+		for i, blk := range sseDocBlocks(string(b)) {
+			total++
+			name := fmt.Sprintf("%s scenario %d", page, i+1)
+			dec := yaml.NewDecoder(strings.NewReader(blk.src))
+			dec.KnownFields(true)
+			var sc config.Scenario
+			if err := dec.Decode(&sc); err != nil {
+				t.Errorf("%s doesn't parse strictly: %v\n%s", name, err, blk.src)
+				continue
+			}
+			if blk.parseOnly {
+				continue
+			}
+			ran++
+			s := runScenario(t, sc, srv, 3)
+			if s.SuccessRate != 1 || s.Requests == 0 {
+				t.Errorf("%s against the example server: %+v\n%s", name, s, blk.src)
+			}
 		}
 	}
-	if n < 2 {
-		t.Fatalf("found %d SSE scenarios in docs/scenarios.md; expected at least 2", n)
+	if total < 6 || ran < 5 {
+		t.Fatalf("found %d SSE scenarios in the docs and ran %d; expected at least 6 and 5", total, ran)
 	}
 }
 
