@@ -152,3 +152,15 @@ type Feeder = generator.Feeder
 func NewFeeder(path, mode string) (*Feeder, error) {
 	return generator.NewFeeder(path, mode)
 }
+
+// KafkaFeederOptions configures NewKafkaFeeder.
+type KafkaFeederOptions = generator.KafkaFeederOptions
+
+// NewKafkaFeeder returns a Feeder whose rows are the messages of a Kafka
+// topic (a JSON object's fields, plus _key, _value, _partition, _offset,
+// _timestamp and _header_<name>). The topic is read directly — no consumer
+// group, no committed offsets — and by default wraps around to the start
+// when it runs out. Close it when done.
+func NewKafkaFeeder(opts KafkaFeederOptions) (*Feeder, error) {
+	return generator.NewKafkaFeeder(opts)
+}

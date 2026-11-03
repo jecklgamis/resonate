@@ -378,8 +378,8 @@ func buildWSGenerator(cfg config.WSConfig) (generator.Generator, error) {
 	opts.Insecure = cfg.Insecure
 	opts.Identities = cfg.Identities
 
-	if cfg.Feeder.File != "" {
-		f, err := generator.NewFeeder(cfg.Feeder.File, cfg.Feeder.Mode)
+	if cfg.Feeder.Configured() {
+		f, err := newFeeder(cfg.Feeder)
 		if err != nil {
 			return nil, fmt.Errorf("ws.feeder: %w", err)
 		}
@@ -439,8 +439,8 @@ func buildGRPCGenerator(cfg config.GRPCConfig) (generator.Generator, error) {
 	opts.DescriptorSet = cfg.DescriptorSet
 	opts.Identities = cfg.Identities
 
-	if cfg.Feeder.File != "" {
-		f, err := generator.NewFeeder(cfg.Feeder.File, cfg.Feeder.Mode)
+	if cfg.Feeder.Configured() {
+		f, err := newFeeder(cfg.Feeder)
 		if err != nil {
 			return nil, fmt.Errorf("grpc.feeder: %w", err)
 		}
@@ -512,8 +512,8 @@ func buildSSEGenerator(cfg config.SSEConfig) (generator.Generator, error) {
 	opts.HTTP.HTTP3 = cfg.HTTP3
 	opts.Identities = cfg.Identities
 
-	if cfg.Feeder.File != "" {
-		f, err := generator.NewFeeder(cfg.Feeder.File, cfg.Feeder.Mode)
+	if cfg.Feeder.Configured() {
+		f, err := newFeeder(cfg.Feeder)
 		if err != nil {
 			return nil, fmt.Errorf("sse.feeder: %w", err)
 		}
@@ -559,12 +559,50 @@ func httpOptionsFrom(cfg config.HTTPConfig) (generator.HTTPOptions, error) {
 	opts.HTTP3 = cfg.HTTP3
 	opts.DisableKeepAlive = cfg.DisableKeepAlive
 
-	if cfg.Feeder.File != "" {
-		f, err := generator.NewFeeder(cfg.Feeder.File, cfg.Feeder.Mode)
+	if cfg.Feeder.Configured() {
+		f, err := newFeeder(cfg.Feeder)
 		if err != nil {
 			return opts, fmt.Errorf("http.feeder: %w", err)
 		}
 		opts.Feeder = f
 	}
 	return opts, nil
+}
+
+// newFeeder builds the feeder a scenario's feeder: block describes: a
+// CSV/JSON file, or a Kafka topic. Exactly one source must be given.
+func newFeeder(cfg config.FeederConfig) (*generator.Feeder, error) {
+	if cfg.File != "" && cfg.Kafka != nil {
+		return nil, fmt.Errorf("set either file or kafka, not both")
+	}
+	if cfg.Kafka == nil {
+		return generator.NewFeeder(cfg.File, cfg.Mode)
+	}
+	if cfg.Mode != "" {
+		return nil, fmt.Errorf("mode applies to file feeders only; a kafka feeder is configured with from/on_end")
+	}
+	k := cfg.Kafka
+	opts := generator.KafkaFeederOptions{
+		Brokers: k.Brokers, Topic: k.Topic, Format: k.Format, From: k.From, OnEnd: k.OnEnd,
+		TLS: k.TLS, Insecure: k.Insecure, CAFile: k.CAFile, CertFile: k.CertFile, KeyFile: k.KeyFile,
+		SASLMechanism: k.SASLMechanism, Username: k.Username, Password: k.Password,
+	}
+	if k.PasswordEnv != "" {
+		if k.Password != "" {
+			return nil, fmt.Errorf("kafka: set either password or password_env, not both")
+		}
+		pw, ok := os.LookupEnv(k.PasswordEnv)
+		if !ok {
+			return nil, fmt.Errorf("kafka: password_env %q is not set", k.PasswordEnv)
+		}
+		opts.Password = pw
+	}
+	if k.Timeout != "" {
+		d, err := time.ParseDuration(k.Timeout)
+		if err != nil || d <= 0 {
+			return nil, fmt.Errorf("kafka: invalid timeout %q", k.Timeout)
+		}
+		opts.Timeout = d
+	}
+	return generator.NewKafkaFeeder(opts)
 }

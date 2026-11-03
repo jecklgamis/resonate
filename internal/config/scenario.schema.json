@@ -172,9 +172,38 @@
           "enum": ["sequential", "random", "stream"],
           "default": "sequential",
           "description": "Row selection mode. Sequential wraps around; stream reads incrementally."
+        },
+        "kafka": {
+          "$ref": "#/$defs/kafkaFeeder",
+          "description": "Consume a Kafka topic instead of reading a file."
         }
       },
-      "required": ["file"]
+      "oneOf": [
+        { "required": ["file"], "not": { "required": ["kafka"] } },
+        { "required": ["kafka"], "not": { "anyOf": [{ "required": ["file"] }, { "required": ["mode"] }] } }
+      ]
+    },
+    "kafkaFeeder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brokers", "topic"],
+      "properties": {
+        "brokers": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "Seed brokers, host:port." },
+        "topic": { "type": "string", "minLength": 1 },
+        "format": { "type": "string", "enum": ["json", "raw"], "default": "json", "description": "json: the message value is a JSON object whose top-level fields become columns. raw: only the _-prefixed metadata columns." },
+        "from": { "type": "string", "enum": ["start", "end"], "default": "start" },
+        "on_end": { "type": "string", "enum": ["wrap", "wait"], "description": "Default wrap when from is start, wait when from is end. wrap needs from: start." },
+        "timeout": { "$ref": "#/$defs/duration", "description": "Connecting and waiting for the first message. Default 10s." },
+        "tls": { "type": "boolean" },
+        "insecure": { "type": "boolean" },
+        "ca_file": { "type": "string" },
+        "cert_file": { "type": "string" },
+        "key_file": { "type": "string" },
+        "sasl_mechanism": { "type": "string", "enum": ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"] },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "password_env": { "type": "string", "description": "Environment variable holding the password." }
+      }
     },
     "load": {
       "type": "object",

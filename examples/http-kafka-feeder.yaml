@@ -1,0 +1,31 @@
+# Drive requests from the messages of a Kafka topic. Each message is a row:
+# a JSON object's fields become {{.Feeder.<field>}}, and every row also has
+# _key, _value, _partition, _offset, _timestamp and _header_<name>.
+#
+# Needs a Kafka broker with a topic "users" holding JSON messages like
+#   {"email": "alice@example.com", "password": "hunter2"}
+protocol: http
+
+load:
+  duration: 3s
+  rate: 10
+  workers: 5
+
+http:
+  timeout: 5s
+  feeder:
+    kafka:
+      brokers: ["localhost:9092"]
+      topic: users
+      format: json   # "json" (default) or "raw" (metadata columns only)
+      from: start    # "start" (default) or "end" (only messages produced from now on)
+      on_end: wrap   # "wrap" (default for from: start) re-reads the topic; "wait" tails new messages
+      # tls: true
+      # sasl_mechanism: SCRAM-SHA-256
+      # username: loadtest
+      # password_env: KAFKA_PASSWORD   # keep the secret out of the file
+  targets:
+    - method: POST
+      url: "http://localhost:8080/login"
+      body: |
+        {"email": "{{.Feeder.email}}", "password": "{{.Feeder.password}}"}

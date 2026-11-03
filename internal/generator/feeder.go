@@ -32,6 +32,7 @@ type Feeder struct {
 	counter uint64 // atomic; only advanced in sequential mode
 
 	stream *streamFeeder // non-nil in "stream" mode; rows/random/counter unused then
+	kafka  *kafkaFeeder  // non-nil for a Kafka feeder (NewKafkaFeeder); everything else unused then
 }
 
 // NewFeeder opens path (.csv or .json). mode is "sequential" (default: rows
@@ -169,6 +170,9 @@ func (f *Feeder) Next() map[string]string {
 	if f.stream != nil {
 		return f.stream.next()
 	}
+	if f.kafka != nil {
+		return f.kafka.next()
+	}
 	if f.random {
 		return f.rows[rand.IntN(len(f.rows))]
 	}
@@ -176,16 +180,21 @@ func (f *Feeder) Next() map[string]string {
 	return f.rows[idx%uint64(len(f.rows))]
 }
 
-// Close stops "stream" mode's background reader goroutine and releases its
-// open file handle. A no-op for sequential/random Feeders (nothing to
+// Close stops "stream" mode's background reader goroutine (or a Kafka
+// feeder's consumer) and releases its open file handle or connections. A no-op for sequential/random Feeders (nothing to
 // stop) and safe to call on a nil *Feeder. Callers should only call this
 // once every goroutine that might call Next() has finished — see
 // streamFeeder's doc comment.
 func (f *Feeder) Close() {
-	if f == nil || f.stream == nil {
+	if f == nil {
 		return
 	}
-	f.stream.close()
+	if f.stream != nil {
+		f.stream.close()
+	}
+	if f.kafka != nil {
+		f.kafka.close()
+	}
 }
 
 // streamFeederBufferSize bounds how many rows streamFeeder holds in memory

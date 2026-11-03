@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/twmb/franz-go/pkg/kfake"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -128,6 +130,33 @@ func TestFeederDrivesRequestData(t *testing.T) {
 	row := feeder.Next()
 	if row["email"] != "alice@example.com" {
 		t.Errorf("Feeder.Next()[\"email\"] = %q, want alice@example.com", row["email"])
+	}
+}
+
+func TestKafkaFeederDrivesRequestData(t *testing.T) {
+	c, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(1, "users"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	cl, err := kgo.NewClient(kgo.SeedBrokers(c.ListenAddrs()...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.ProduceSync(context.Background(), &kgo.Record{Topic: "users", Value: []byte(`{"email":"alice@example.com"}`)}).FirstErr(); err != nil {
+		t.Fatal(err)
+	}
+	cl.Close()
+
+	feeder, err := resonate.NewKafkaFeeder(resonate.KafkaFeederOptions{Brokers: c.ListenAddrs(), Topic: "users"})
+	if err != nil {
+		t.Fatalf("NewKafkaFeeder error: %v", err)
+	}
+	defer feeder.Close()
+	for i := 0; i < 3; i++ { // one message, so it wraps
+		if row := feeder.Next(); row["email"] != "alice@example.com" || row["_offset"] != "0" {
+			t.Errorf("Next() #%d = %v", i, row)
+		}
 	}
 }
 

@@ -116,6 +116,11 @@ Method groups on `Scenario`:
   [Feeders](scenarios.md#feeders). Applies to whichever kind of
   `Scenario` is being built (HTTP/flow, or the WS connection once `WS`
   has been called); a load error is deferred to `Build()`/`Run()`.
+  A **Kafka topic** as the source isn't a builder method: build it with
+  `resonate.NewKafkaFeeder(resonate.KafkaFeederOptions{Brokers: ..., Topic: ...})`
+  (options mirror [the YAML](scenarios.md#feeding-from-a-kafka-topic)) and set
+  it as `HTTPOptions.Feeder` / `WSOptions.Feeder` / `GRPCOptions.Feeder` (or
+  `.HTTP.Feeder` on `FlowOptions`/`SSEOptions`); `Close()` it after the run.
 - **Assertions** — `Assert(...Assertion)` accumulates assertions;
   `Run(ctx)` evaluates them and returns a non-nil error (with `Summary`
   still populated) if any fail or a `Metric` name is unrecognized — the

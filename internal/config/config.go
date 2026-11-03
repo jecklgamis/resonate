@@ -213,6 +213,43 @@ type FeederConfig struct {
 	// sequential, it wraps around indefinitely), holding only a small
 	// read-ahead buffer in memory regardless of File's size.
 	Mode string `yaml:"mode"`
+
+	// Kafka consumes a topic instead of reading File: each message is a
+	// row. Mutually exclusive with File (and Mode, which only applies to
+	// files).
+	Kafka *KafkaFeederConfig `yaml:"kafka"`
+}
+
+// Configured reports whether any data source is set.
+func (f FeederConfig) Configured() bool { return f.File != "" || f.Kafka != nil }
+
+// KafkaFeederConfig is a feeder fed by a Kafka topic. See
+// internal/generator.KafkaFeederOptions for the semantics of each field.
+type KafkaFeederConfig struct {
+	Brokers []string `yaml:"brokers"`
+	Topic   string   `yaml:"topic"`
+	// Format is "json" (default) or "raw".
+	Format string `yaml:"format"`
+	// From is "start" (default) or "end".
+	From string `yaml:"from"`
+	// OnEnd is "wrap" (default for from: start) or "wait".
+	OnEnd string `yaml:"on_end"`
+	// Timeout bounds connecting and waiting for the first message (default 10s).
+	Timeout string `yaml:"timeout"`
+
+	TLS      bool   `yaml:"tls"`
+	Insecure bool   `yaml:"insecure"`
+	CAFile   string `yaml:"ca_file"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+
+	// SASLMechanism is PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512.
+	SASLMechanism string `yaml:"sasl_mechanism"`
+	Username      string `yaml:"username"`
+	Password      string `yaml:"password"`
+	// PasswordEnv names an environment variable holding the password, so
+	// it needn't be written into a checked-in scenario file.
+	PasswordEnv string `yaml:"password_env"`
 }
 
 // HTTPTargetConfig describes one request template, used for both http.targets

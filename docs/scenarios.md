@@ -63,7 +63,7 @@ scenarios don't. See
 ## Feeders
 
 `http.feeder`/`ws.feeder` hand out one row of data per iteration from a
-CSV or JSON file, exposed to templates as `{{.Feeder.<column>}}` — for
+CSV or JSON file (or [a Kafka topic](#feeding-from-a-kafka-topic)), exposed to templates as `{{.Feeder.<column>}}` — for
 replaying real-looking data instead of pure random values.
 
 ```yaml
@@ -102,6 +102,58 @@ Notes:
 
 See [`examples/http-feeder.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-feeder.yaml)
 and [`examples/data/users.csv`](https://github.com/jecklgamis/resonate/blob/main/examples/data/users.csv).
+
+### Feeding from a Kafka topic
+
+Instead of a file, a feeder can consume a Kafka topic: each message is a
+row. It works under `http`, `ws`, `sse` and `grpc` like any other feeder.
+
+```yaml
+http:
+  feeder:
+    kafka:
+      brokers: ["localhost:9092"]
+      topic: users
+  targets:
+    - method: POST
+      url: http://localhost:8080/login
+      body: '{"email": "{{.Feeder.email}}", "password": "{{.Feeder.password}}"}'
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `brokers`, `topic` | required | Seed brokers (`host:port`) and the topic to consume |
+| `format` | `json` | `json`: the value must be a JSON object, whose top-level fields become columns (nested values are exposed as raw JSON text). `raw`: only the metadata columns below |
+| `from` | `start` | `start`: the oldest retained message. `end`: only messages produced after the run begins |
+| `on_end` | `wrap` (`wait` with `from: end`) | `wrap`: when every partition has been read to its end, re-read the topic from the start, so rows cycle like a file feeder's. `wait`: keep consuming newly produced messages |
+| `timeout` | `10s` | Connecting, and waiting for the first message |
+| `tls`, `insecure`, `ca_file`, `cert_file`, `key_file` | off | TLS, same meaning as for `http` |
+| `sasl_mechanism`, `username`, `password` / `password_env` | none | `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`; `password_env` names an environment variable so the secret stays out of the file |
+
+Every row also has `{{.Feeder._key}}`, `_value` (the raw message),
+`_partition`, `_offset`, `_timestamp` (Unix milliseconds) and
+`_header_<name>` for each message header.
+
+Notes:
+- The topic is read straight from its partitions: **no consumer group, and
+  no offsets are ever committed**, so a test neither disturbs nor depends on
+  anyone else's consumers, and every run starts from the same place.
+- Only a small buffer (1000 messages) is held in memory, however large the
+  topic. Across several partitions, order is not guaranteed.
+- Construction fails fast — unreachable brokers, a missing topic, bad
+  options, or (for `from: start`) a topic with no usable message — before any
+  request is sent. A message that isn't valid JSON is skipped under
+  `format: json`.
+- `wrap` takes a snapshot of each partition's end when a pass begins, so
+  messages produced mid-pass are picked up on the next pass. `from: end`
+  can't `wrap` (there is nothing to wrap around) and is rejected.
+- If a `wait` topic is idle, a worker gets the most recent row again after
+  a second (or an empty row if there has never been one) instead of blocking,
+  so a quiet topic slows the test down rather than hanging it.
+- This is Kafka as a *data source*. Producing load **to** Kafka is not
+  supported.
+
+See [`examples/http-kafka-feeder.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-kafka-feeder.yaml).
 
 ## Multi-Step Flows and Response Chaining
 

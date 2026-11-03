@@ -21,7 +21,7 @@ for the repo's top-level overview, see its
 | Execution models | Closed model (fixed concurrency) and open model (constant-arrival-rate, auto-scaling concurrency to sustain a target rate) — flat or ramped via staged schedules |
 | Multi-step flows | Response chaining (`{{.Vars.*}}`), per-virtual-user identities, think-time/control flow (`pause`, `repeat`, `during`, `if`) |
 | Request templating | `{{ }}` expressions for unique IDs, random payloads, fresh auth headers |
-| Data feeders | CSV/JSON feeders (with a streaming mode for files too large to fit in memory) for driving requests from real data |
+| Data feeders | CSV/JSON feeders (with a streaming mode for files too large to fit in memory), or a Kafka topic, for driving requests from real data |
 | Base URL & file bodies | `base_url` to avoid repeating a host per target; templated or raw file-sourced request bodies for large/binary payloads |
 | Response checks | Per-request `expect_status`/`expect_headers`/`expect_body`, matched via JSONPath, XPath, regex, or CSS selectors, overriding the default 2xx/3xx success criterion |
 | WebSocket support | Connect, send/receive a message sequence, chain extracted values the same way HTTP flows do |
