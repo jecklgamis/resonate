@@ -1,0 +1,25 @@
+# HTTP/3 (HTTP over QUIC, on UDP). `http3: true` sends every request over HTTP/3, so
+# every url must be https:// (QUIC is always TLS). It is opt-in, not negotiated: the
+# target must speak HTTP/3 on its UDP port, or every request fails. It can't be
+# combined with `h2c` or `disable_keepalive`.
+#
+# The expect_body check below asks the example server which protocol version the
+# request arrived over, so a run that silently fell back to TCP would fail.
+#
+# Try it without a service of your own, using the example HTTP/3 server:
+#   make example-http3-server      # or: go run ./examples/testhttp3server   (listens on :8443)
+#   resonate run examples/http-http3.yaml --dry-run
+load:
+  duration: 30s
+  rate: 50
+  workers: 20
+
+http:
+  http3: true
+  insecure: true      # the example server's certificate is self-signed
+  timeout: 5s
+  targets:
+    - method: GET
+      url: https://localhost:8443/proto
+      expect_body:
+        json:proto: HTTP/3.0

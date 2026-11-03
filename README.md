@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jecklgamis/resonate/actions/workflows/ci.yml/badge.svg)](https://github.com/jecklgamis/resonate/actions/workflows/ci.yml)
 
-A load generator for HTTP, WebSocket, Server-Sent Events and gRPC: `resonate hit <url>`
+A load generator for HTTP (including HTTP/3), WebSocket, Server-Sent Events and gRPC: `resonate hit <url>`
 for quick, flag-driven one-off runs, `resonate run <scenario.yaml>` for
 reusable multi-target/multi-step/WebSocket/SSE/gRPC scenarios, and the same
 engine as a Go library.
@@ -39,7 +39,8 @@ Every run writes a stdout summary plus `report.html`/`report.json`/
 `results.jsonl` by default. For multi-target/multi-step/WebSocket/SSE/gRPC
 scenarios in YAML, see [docs/usage.md](docs/usage.md) and
 [docs/scenarios.md](docs/scenarios.md); for gRPC (unary and streaming), the
-[gRPC guide](docs/grpc.md); for Server-Sent Events, the [SSE guide](docs/sse.md).
+[gRPC guide](docs/grpc.md); for Server-Sent Events, the [SSE guide](docs/sse.md); for HTTP/3, the
+[HTTP/3 guide](docs/http3.md).
 
 ## Go library
 

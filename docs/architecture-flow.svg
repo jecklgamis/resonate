@@ -37,7 +37,7 @@
 
   <rect class="accent" x="140" y="148" width="500" height="72" rx="6"/>
   <text class="title" x="390" y="172" text-anchor="middle">internal/generator</text>
-  <text class="sub"   x="390" y="189" text-anchor="middle">builds HTTPGenerator / FlowGenerator / WSGenerator</text>
+  <text class="sub"   x="390" y="189" text-anchor="middle">builds an HTTP / Flow / WS / SSE / gRPC Generator</text>
   <text class="sub"   x="390" y="205" text-anchor="middle">— one Generator, Do(ctx, vuID) []Result per iteration</text>
 
   <!-- Generator -> Engine -->

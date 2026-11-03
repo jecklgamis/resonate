@@ -194,6 +194,26 @@ See [`resonate_test.go`](https://github.com/jecklgamis/resonate/blob/main/resona
 for worked examples (a plain HTTP run, a multi-step flow, assertions, a
 feeder, gRPC unary and streaming) written using only this public package.
 
+### HTTP/3
+
+HTTP/3 needs no new API: set `HTTP3` on `HTTPOptions` for the struct API, or call
+`HTTP3()` on the fluent `Scenario` builder (for SSE, `opts.HTTP.HTTP3`). Every URL must
+be `https://`, and a violation is an error from the constructor (or `Build()`/`Run()`)
+before anything is sent. See the [HTTP/3 guide](http3.md#from-go) for examples.
+
+```go
+summary, err := resonate.NewScenario().
+	Get("https://localhost:8443/proto").
+	HTTP3().
+	Insecure().
+	Requests(100).Workers(10).
+	Run(ctx)
+if err != nil {
+	log.Fatal(err)
+}
+summary.Print(os.Stdout)
+```
+
 ### Server-Sent Events
 
 Like gRPC, SSE is available through the struct API only; the fluent `Scenario`

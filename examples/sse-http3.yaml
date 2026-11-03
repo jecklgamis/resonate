@@ -1,0 +1,18 @@
+# Server-Sent Events over HTTP/3: `http3: true` under `sse` works exactly as it does
+# under `http`. The url must be https://, and HTTP/3 is opt-in.
+#
+# Try it without a service of your own, using the example HTTP/3 server:
+#   make example-http3-server      # or: go run ./examples/testhttp3server   (listens on :8443)
+#   resonate run examples/sse-http3.yaml --dry-run
+protocol: sse
+
+load:
+  duration: 30s
+  workers: 20
+
+sse:
+  url: https://localhost:8443/events
+  http3: true
+  insecure: true      # the example server's certificate is self-signed
+  events: 10          # succeed once 10 events arrive
+  timeout: 5s

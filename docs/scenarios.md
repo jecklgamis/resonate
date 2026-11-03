@@ -200,6 +200,22 @@ least one nested `steps` entry, and nest freely. A failed request step
 stops the whole flow, unwinding out of every enclosing block. See
 [`examples/http-flow-control.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-flow-control.yaml).
 
+## HTTP/3
+
+`http3: true` under `http:` sends every request over HTTP/3 (HTTP over QUIC, on UDP)
+instead of HTTP/1.1. It is opt-in, not negotiated, and every URL must be `https://`.
+It also works under `sse:`.
+
+```yaml
+http:
+  http3: true
+  targets:
+    - url: https://localhost:8443/proto
+```
+
+The full story — the CLI flag, the Go options, what it does and doesn't do,
+troubleshooting, and a runnable example server — is in the **[HTTP/3 guide](http3.md)**.
+
 ## WebSocket
 
 `protocol: ws` (scenario files only) dials one connection per iteration,

@@ -29,7 +29,7 @@ for the repo's top-level overview, see its
 | gRPC support | Unary and server-/client-/bidirectional-streaming calls, with the schema from server reflection, `.proto` files or a descriptor set; JSON messages with templating, metadata, response chaining, status-code and body checks (`protocol: grpc`). See the [gRPC guide](grpc.md) |
 | Assertions / CI gating | Non-zero exit on a failed threshold — `resonate hit --assert 'metric<op>threshold'` or a scenario file's `assertions:` (richer condition set: `gt`/`lt`/`is`/`in`/`around`/`deviatesAround`) |
 | Reporting | Four formats every run by default: stdout summary, self-contained HTML, JSON, raw per-request JSON Lines dump |
-| HTTP transport controls | mTLS, custom CA trust, h2c (HTTP/2 cleartext), keep-alive control |
+| HTTP transport controls | mTLS, custom CA trust, HTTP/3 (QUIC) on request, h2c (HTTP/2 cleartext), keep-alive control. See the [HTTP/3 guide](http3.md) |
 | Go library | Usable as `go get github.com/jecklgamis/resonate` — thin public facade over the CLI's engine, plus a fluent `Scenario` builder DSL |
 
 ## Quick Start
@@ -72,6 +72,9 @@ what each of the four report formats contains.
   example server.
 - **[Server-Sent Events](sse.md)** — the full guide: streams, ending them,
   what gets reported, load profiles, troubleshooting, and a runnable example
+  server.
+- **[HTTP/3](http3.md)** — the full guide: using `--http3`, `http3: true` and the Go
+  options, what it does and doesn't do, troubleshooting, and a runnable example
   server.
 - **[Execution Models](execution-models.md)** — workers, rate, open vs.
   closed model, ramp profiles, virtual user lifecycle.

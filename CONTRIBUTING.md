@@ -68,7 +68,9 @@ use it to spot untested branches in whatever you're changing, not as a gate.
 - Follow the existing testing patterns rather than introducing new ones —
   see `CLAUDE.md`'s "Testing patterns already in use" for what each package
   already does (`httptest.Server` in `internal/generator`, a `fakeGenerator` in
-  `internal/engine`, stdout/stderr capture in `internal/cli`).
+  `internal/engine`, stdout/stderr capture in `internal/cli`). The gRPC, SSE and
+  HTTP/3 example servers under `examples/` are also test fixtures: their tests run
+  the shipped example scenarios and the scenarios in the docs against them.
 
 `CLAUDE.md` has the full architecture rundown if you want more context
 before diving in.
@@ -81,6 +83,14 @@ If your change affects any of that, update the relevant `docs/*.md` page
 in the same PR — don't let it drift. `README.md` is deliberately a short
 overview that links into `docs/`; it shouldn't grow detailed reference
 content back into it.
+
+The protocol guides (`docs/grpc.md`, `docs/sse.md`, `docs/http3.md`) contain
+scenarios that are tested: every complete one is strict-parsed and run against the
+matching example server (`make example-grpc-server`, `make example-sse-server`,
+`make example-http3-server`), so a typo or a scenario that stops working fails
+`go test ./...`. Keep new full scenarios runnable against that server, or mark a
+long-running illustration with an invisible `<!-- docs-test: parse-only -->` line
+above its code fence. `docs/architecture.md` lists what to touch to add a protocol.
 
 `docs/cli/*.md` is generated from the cobra command tree (`make docs`), so
 it can't drift on its own — but if you add/remove/rename a flag, regenerate

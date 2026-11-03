@@ -4,6 +4,7 @@
 - [Scenarios](scenarios.md)
 - [gRPC](grpc.md)
 - [Server-Sent Events](sse.md)
+- [HTTP/3](http3.md)
 - [Execution Models](execution-models.md)
 - [Reports](reports.md)
 - [Library](library.md)

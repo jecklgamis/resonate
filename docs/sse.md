@@ -115,6 +115,7 @@ sse:
 | `identities`, `feeder` | Per-user and per-iteration data, as for the other protocols. |
 | `insecure`, `ca_file`, `cert_file`, `key_file` | TLS options, as for `http`. |
 | `h2c` | Plaintext HTTP/2 (prior knowledge). See [Connections](#connections-and-limits). |
+| `http3` | Use HTTP/3 (QUIC over UDP); the `url` must be `https://`. See the [HTTP/3 guide](http3.md). Can't be combined with `h2c`. |
 | `max_response_body` | Cap the bytes read per stream; the stream then looks as if the server closed it. |
 
 resonate adds `Accept: text/event-stream` and `Cache-Control: no-cache` unless you

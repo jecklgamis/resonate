@@ -26,6 +26,13 @@ example-grpc-server:
 example-sse-server:
 	go run ./examples/testsseserver $(ARGS)
 
+# The HTTP/3 example server (examples/testhttp3server), a target for trying
+# examples/http-http3.yaml and examples/sse-http3.yaml. Pass flags with ARGS,
+# e.g. ARGS=-h3-only.
+.PHONY: example-http3-server
+example-http3-server:
+	go run ./examples/testhttp3server $(ARGS)
+
 .PHONY: test
 test:
 	go test ./...
