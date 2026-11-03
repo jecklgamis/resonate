@@ -190,7 +190,10 @@ uses a scenario file's `assertions:` list, with more conditions — see
 | `>` | Value must be strictly greater than the threshold |
 | `<` | Value must be strictly less than the threshold |
 
-See [Scenarios](scenarios.md#assertions) for the full metric list and
+Metrics include `requests`, `success_rate`, `error_rate`, `rate`, and the latency
+values `latency_min`, `latency_mean`, `latency_p50`, `latency_p75`, `latency_p90`,
+`latency_p95`, `latency_p99` and `latency_max` (or any `latency_p<N>`). See
+[Scenarios](scenarios.md#assertions) for the full metric list and
 richer condition set (`gt`/`lt`/`is`/`in`/`around`/`deviatesAround`), and
 [`examples/http-assertions.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-assertions.yaml)
 for a worked example.

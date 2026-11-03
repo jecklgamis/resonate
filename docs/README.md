@@ -1,6 +1,6 @@
 # resonate
 
-A load generator for HTTP, WebSocket, Server-Sent Events and gRPC: `resonate hit <url>` for a
+A load generator for HTTP (including HTTP/3), WebSocket, Server-Sent Events and gRPC: `resonate hit <url>` for a
 quick, flag-driven one-off run against a single URL, and
 `resonate run <scenario.yaml>` for reusable, multi-target/multi-step
 scenarios.
@@ -28,7 +28,7 @@ for the repo's top-level overview, see its
 | Server-Sent Events | Open a stream per iteration, read N events and/or for a duration; reports time-to-headers and per-event gaps (`protocol: sse`). See the [SSE guide](sse.md) |
 | gRPC support | Unary and server-/client-/bidirectional-streaming calls, with the schema from server reflection, `.proto` files or a descriptor set; JSON messages with templating, metadata, response chaining, status-code and body checks (`protocol: grpc`). See the [gRPC guide](grpc.md) |
 | Assertions / CI gating | Non-zero exit on a failed threshold — `resonate hit --assert 'metric<op>threshold'` or a scenario file's `assertions:` (richer condition set: `gt`/`lt`/`is`/`in`/`around`/`deviatesAround`) |
-| Reporting | Four formats every run by default: stdout summary, self-contained HTML, JSON, raw per-request JSON Lines dump |
+| Reporting | Four formats every run by default: stdout summary, self-contained HTML (script-free, with a hoverable requests-over-time chart), JSON, raw per-request JSON Lines dump. See [Reports](reports.md) |
 | HTTP transport controls | mTLS, custom CA trust, HTTP/3 (QUIC) on request, h2c (HTTP/2 cleartext), keep-alive control. See the [HTTP/3 guide](http3.md) |
 | Go library | Usable as `go get github.com/jecklgamis/resonate` — thin public facade over the CLI's engine, plus a fluent `Scenario` builder DSL |
 
@@ -52,8 +52,9 @@ resonate hit http://localhost:8080/health --rate 50 --duration 30s --workers 20
 
 Every run writes `report.html`, `report.json`, and `results.jsonl` to the
 current directory in addition to the stdout summary — open `report.html`
-in a browser for KPI cards, a requests-over-time chart, and a latency
-distribution histogram.
+in a browser for KPI cards, a requests-over-time chart (point at a bucket for
+its time, request counts, rate and mean latency), a latency distribution
+histogram, and the latency percentiles (p50, p75, p90, p95, p99).
 
 See [Usage](usage.md) for the full quickstart (including a scenario file
 for multi-target/multi-step/WebSocket/SSE/gRPC runs), and [Reports](reports.md) for
