@@ -81,12 +81,17 @@ func TestLatencyStatsPercentiles(t *testing.T) {
 	if s.Latencies.Max != 100*time.Millisecond {
 		t.Errorf("Max = %v, want 100ms", s.Latencies.Max)
 	}
-	// p50 of a 0-indexed sorted slice of 100 via idx=int(0.5*100)=50 -> sorted[50] = 51ms (1-indexed values).
-	if s.Latencies.P50 != 51*time.Millisecond {
-		t.Errorf("P50 = %v, want 51ms", s.Latencies.P50)
+	// Percentiles come from an HDR histogram (3 significant figures), so
+	// compare within 1ms rather than exactly.
+	near := func(got, want time.Duration) bool {
+		d := got - want
+		return d >= -time.Millisecond && d <= time.Millisecond
 	}
-	if s.Latencies.P99 != 100*time.Millisecond {
-		t.Errorf("P99 = %v, want 100ms (last bucket)", s.Latencies.P99)
+	if !near(s.Latencies.P50, 50*time.Millisecond) {
+		t.Errorf("P50 = %v, want ~50ms", s.Latencies.P50)
+	}
+	if !near(s.Latencies.P99, 99*time.Millisecond) {
+		t.Errorf("P99 = %v, want ~99ms", s.Latencies.P99)
 	}
 }
 

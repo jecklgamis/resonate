@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"sort"
 	"time"
 
+	"github.com/HdrHistogram/hdrhistogram-go"
 	"github.com/jecklgamis/resonate/internal/generator"
 )
 
@@ -21,10 +21,24 @@ type point struct {
 	success bool
 }
 
+// Latency histogram bounds, in nanoseconds: 1ns to 1h at 3 significant
+// figures (≤0.1% error), ~0.5MB regardless of request count. Latencies above
+// the ceiling are clamped to it rather than dropped.
+const (
+	histMaxLatency = int64(time.Hour)
+	histSigFigs    = 3
+)
+
+func newLatencyHist() *hdrhistogram.Histogram {
+	return hdrhistogram.New(1, histMaxLatency, histSigFigs)
+}
+
 // Aggregator collects results from a run. It is not safe for concurrent use;
 // results should be funneled through a single goroutine (see engine.Run).
 type Aggregator struct {
-	latencies []time.Duration
+	latencies *hdrhistogram.Histogram
+	minLat    time.Duration // exact; the histogram only keeps 3 significant figures
+	maxLat    time.Duration
 	points    []point
 	codes     map[int]int
 	errors    map[string]int
@@ -37,8 +51,9 @@ type Aggregator struct {
 
 func NewAggregator() *Aggregator {
 	return &Aggregator{
-		codes:  make(map[int]int),
-		errors: make(map[string]int),
+		latencies: newLatencyHist(),
+		codes:     make(map[int]int),
+		errors:    make(map[string]int),
 	}
 }
 
@@ -60,7 +75,17 @@ func (a *Aggregator) Add(r generator.Result) {
 		return
 	}
 
-	a.latencies = append(a.latencies, r.Latency)
+	lat := r.Latency
+	if lat < 0 {
+		lat = 0
+	}
+	if a.latencies.TotalCount() == 0 || lat < a.minLat {
+		a.minLat = lat
+	}
+	if lat > a.maxLat {
+		a.maxLat = lat
+	}
+	_ = a.latencies.RecordValue(min(int64(lat), histMaxLatency)) // in range by construction
 	a.codes[r.StatusCode]++
 	if r.Success() {
 		a.success++
@@ -96,11 +121,10 @@ type Summary struct {
 	Saturated       bool `json:"rate_saturated,omitempty"`
 	PeakConcurrency int  `json:"peak_concurrency,omitempty"`
 
-	// sortedLatencies backs Evaluate's arbitrary-percentile assertions
+	// hist backs Evaluate's arbitrary-percentile assertions
 	// ("latency_p97.5", not just the fixed P50/P90/P95/P99 above) — kept
-	// unexported (so it never appears in --json output) rather than
-	// resorting a.latencies on every assertion check.
-	sortedLatencies []time.Duration
+	// unexported (so it never appears in --json output).
+	hist *hdrhistogram.Histogram
 }
 
 type LatencyStats struct {
@@ -137,7 +161,7 @@ func (a *Aggregator) Summary(wallClock time.Duration) Summary {
 	for _, c := range a.errors {
 		errCount += c
 	}
-	requests := len(a.latencies) + errCount
+	requests := int(a.latencies.TotalCount()) + errCount
 
 	dur := wallClock
 	if dur <= 0 && !a.first.IsZero() {
@@ -159,12 +183,12 @@ func (a *Aggregator) Summary(wallClock time.Duration) Summary {
 	if dur > 0 {
 		summary.Rate = float64(requests) / dur.Seconds()
 	}
-	if len(a.latencies) > 0 {
-		summary.sortedLatencies = sortLatencies(a.latencies)
-		summary.Latencies = latencyStats(summary.sortedLatencies)
+	if a.latencies.TotalCount() > 0 {
+		summary.hist = a.latencies
+		summary.Latencies = latencyStats(a.latencies, a.minLat, a.maxLat)
 	}
 	summary.TimeSeries = bucketSeries(a.points, a.first, dur)
-	summary.LatencyHistogram = latencyHistogram(a.latencies)
+	summary.LatencyHistogram = latencyHistogram(a.latencies, a.minLat, a.maxLat)
 	return summary
 }
 
@@ -210,24 +234,17 @@ func bucketSeries(points []point, start time.Time, dur time.Duration) []TimeBuck
 }
 
 // latencyHistogram buckets latencies into a fixed number of equal-width
-// bins spanning [min, max], for the response-time distribution chart.
-func latencyHistogram(latencies []time.Duration) []HistogramBin {
-	if len(latencies) == 0 {
+// bins spanning [min, max], for the response-time distribution chart. Each
+// HDR bar is assigned to the bin containing its upper bound.
+func latencyHistogram(h *hdrhistogram.Histogram, min, max time.Duration) []HistogramBin {
+	total := int(h.TotalCount())
+	if total == 0 {
 		return nil
-	}
-	min, max := latencies[0], latencies[0]
-	for _, l := range latencies {
-		if l < min {
-			min = l
-		}
-		if l > max {
-			max = l
-		}
 	}
 
 	const numBins = 20
 	if min == max {
-		return []HistogramBin{{Le: max, Count: len(latencies)}}
+		return []HistogramBin{{Le: max, Count: total}}
 	}
 	width := (max - min) / numBins
 	if width <= 0 {
@@ -240,70 +257,50 @@ func latencyHistogram(latencies []time.Duration) []HistogramBin {
 	}
 	bins[numBins-1].Le = max // last bin always closes exactly on max, regardless of rounding
 
-	for _, l := range latencies {
-		idx := int((l - min) / width)
+	for _, bar := range h.Distribution() {
+		if bar.Count == 0 {
+			continue
+		}
+		v := time.Duration(bar.To)
+		if v > max {
+			v = max
+		}
+		idx := int((v - min) / width)
+		if idx < 0 {
+			idx = 0
+		}
 		if idx >= numBins {
 			idx = numBins - 1
 		}
-		bins[idx].Count++
+		bins[idx].Count += int(bar.Count)
 	}
 	return bins
 }
 
-// sortLatencies returns a sorted copy of latencies, for both latencyStats
-// and (kept around on Summary) arbitrary-percentile assertions.
-func sortLatencies(latencies []time.Duration) []time.Duration {
-	sorted := make([]time.Duration, len(latencies))
-	copy(sorted, latencies)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
-	return sorted
-}
-
-// latencyStats computes stats from an already-sorted, non-empty slice
-// (see sortLatencies) — the empty case is handled by the caller so it
-// doesn't need a sentinel/zero-value check here too.
-func latencyStats(sorted []time.Duration) LatencyStats {
-	var sum time.Duration
-	for _, l := range sorted {
-		sum += l
-	}
-	mean := sum / time.Duration(len(sorted))
-
-	var sqDiffSum float64
-	for _, l := range sorted {
-		d := float64(l - mean)
-		sqDiffSum += d * d
-	}
-	stdDev := time.Duration(math.Sqrt(sqDiffSum / float64(len(sorted))))
-
+// latencyStats computes stats from a non-empty histogram (the empty case is
+// handled by the caller). min/max are tracked exactly by the Aggregator;
+// the rest carry the histogram's ≤0.1% quantization error.
+func latencyStats(h *hdrhistogram.Histogram, min, max time.Duration) LatencyStats {
 	return LatencyStats{
-		Min:    sorted[0],
-		Mean:   mean,
-		StdDev: stdDev,
-		P50:    percentile(sorted, 0.50),
-		P90:    percentile(sorted, 0.90),
-		P95:    percentile(sorted, 0.95),
-		P99:    percentile(sorted, 0.99),
-		Max:    sorted[len(sorted)-1],
+		Min:    min,
+		Mean:   time.Duration(h.Mean()),
+		StdDev: time.Duration(h.StdDev()),
+		P50:    percentile(h, 0.50),
+		P90:    percentile(h, 0.90),
+		P95:    percentile(h, 0.95),
+		P99:    percentile(h, 0.99),
+		Max:    max,
 	}
 }
 
-// percentile returns the p-th percentile (p in [0, 1]) of an already-sorted
-// slice via the nearest-rank method — shared by latencyStats' fixed
-// P50/P90/P95/P99 and Evaluate's arbitrary-percentile assertions, so both
-// use identical math.
-func percentile(sorted []time.Duration, p float64) time.Duration {
-	if len(sorted) == 0 {
+// percentile returns the p-th percentile (p in [0, 1]) of h — shared by
+// latencyStats' fixed P50/P90/P95/P99 and Evaluate's arbitrary-percentile
+// assertions, so both use identical math. A nil histogram yields 0.
+func percentile(h *hdrhistogram.Histogram, p float64) time.Duration {
+	if h == nil || h.TotalCount() == 0 {
 		return 0
 	}
-	idx := int(p * float64(len(sorted)))
-	if idx >= len(sorted) {
-		idx = len(sorted) - 1
-	}
-	if idx < 0 {
-		idx = 0
-	}
-	return sorted[idx]
+	return time.Duration(h.ValueAtQuantile(p * 100))
 }
 
 // Print writes a human-readable report.

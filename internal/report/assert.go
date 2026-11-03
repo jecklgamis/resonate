@@ -221,11 +221,11 @@ func (s Summary) metricValue(metric string) (float64, error) {
 		return s.Latencies.Max.Seconds(), nil
 	}
 	// Any other "latency_p<N>" is an arbitrary percentile computed directly
-	// from sortedLatencies — only populated by Aggregator.Summary, so a
+	// from hist — only populated by Aggregator.Summary, so a
 	// hand-built Summary literal (e.g. in a test) can use the four fixed
 	// percentiles above but not an arbitrary one.
 	if pct, ok := latencyPercentileMetric(metric); ok {
-		return percentile(s.sortedLatencies, pct/100).Seconds(), nil
+		return percentile(s.hist, pct/100).Seconds(), nil
 	}
 	return 0, fmt.Errorf("unknown assertion metric %q (see README's \"Assertions\" section for the supported list)", metric)
 }
