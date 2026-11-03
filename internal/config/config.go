@@ -184,8 +184,14 @@ type HTTPConfig struct {
 	// with Insecure/CertFile/KeyFile/CAFile, which are all TLS-only.
 	H2C bool `yaml:"h2c"`
 
+	// HTTP3 forces HTTP/3 (HTTP over QUIC, on UDP) for every request. Every
+	// url must be https:// — QUIC is always TLS — and Insecure/CertFile/
+	// KeyFile/CAFile apply as usual. Opt-in, not negotiated: there is no
+	// Alt-Svc discovery. Mutually exclusive with H2C and DisableKeepAlive.
+	HTTP3 bool `yaml:"http3"`
+
 	// DisableKeepAlive forces a fresh connection per request instead of
-	// reusing pooled connections; mutually exclusive with H2C.
+	// reusing pooled connections; mutually exclusive with H2C and HTTP3.
 	DisableKeepAlive bool `yaml:"disable_keepalive"`
 }
 
@@ -412,6 +418,10 @@ type SSEConfig struct {
 
 	// H2C forces prior-knowledge HTTP/2 over plaintext, like http.h2c.
 	H2C bool `yaml:"h2c"`
+
+	// HTTP3 uses HTTP/3 (QUIC over UDP), like http.http3; the url must be
+	// https://. Mutually exclusive with H2C.
+	HTTP3 bool `yaml:"http3"`
 }
 
 // ParsedDuration parses SSEConfig.Duration, returning 0 if unset.

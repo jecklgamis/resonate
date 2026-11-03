@@ -619,3 +619,40 @@ sse:
 		t.Errorf("unset ParsedDuration = %v, %v; want 0", d, err)
 	}
 }
+
+func TestLoadHTTP3Scenario(t *testing.T) {
+	path := writeTempFile(t, "scenario.yaml", `
+load:
+  duration: 5s
+http:
+  http3: true
+  insecure: true
+  targets:
+    - url: https://example.com/
+`)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if !s.HTTP.HTTP3 || !s.HTTP.Insecure {
+		t.Errorf("http.http3 / insecure not parsed: %+v", s.HTTP)
+	}
+}
+
+func TestLoadSSEHTTP3Scenario(t *testing.T) {
+	path := writeTempFile(t, "scenario.yaml", `
+protocol: sse
+load:
+  duration: 5s
+sse:
+  url: https://example.com/stream
+  http3: true
+`)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if !s.SSE.HTTP3 {
+		t.Error("sse.http3 not parsed")
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/net/http2"
 
 	"github.com/jecklgamis/resonate/internal/tmpl"
@@ -94,6 +95,18 @@ type HTTPOptions struct {
 	// TLS-only concerns.
 	H2C bool
 
+	// HTTP3 forces HTTP/3 (HTTP over QUIC, on UDP) for every request, via
+	// quic-go. Opt-in rather than negotiated: resonate doesn't do Alt-Svc
+	// discovery, so a target either speaks HTTP/3 on its UDP port or every
+	// request fails. QUIC is always TLS 1.3, so every URL must be https://
+	// (checked at construction, including URLs resolved through BaseURL);
+	// Insecure/CertFile/KeyFile/CAFile apply as usual. Mutually exclusive
+	// with H2C (a different, plaintext protocol) and DisableKeepAlive
+	// (quic-go's transport has no equivalent knob, so it would silently
+	// no-op). MaxIdleConns is ignored: QUIC multiplexes every request to a
+	// host over one connection.
+	HTTP3 bool
+
 	// DisableKeepAlive forces a fresh TCP (+TLS) connection per request
 	// instead of the default pooled/reused connections — useful for
 	// simulating "cold" clients or stress-testing a target's connection
@@ -158,6 +171,12 @@ func newTLSConfig(insecure bool, caFile, certFile, keyFile string) (*tls.Config,
 }
 
 func newHTTPClient(opts HTTPOptions) (*http.Client, error) {
+	if opts.HTTP3 && opts.H2C {
+		return nil, fmt.Errorf("http3 and h2c are different protocols and can't be combined")
+	}
+	if opts.HTTP3 && opts.DisableKeepAlive {
+		return nil, fmt.Errorf("disable-keepalive isn't supported with http3: QUIC multiplexes all requests over one connection")
+	}
 	if opts.H2C {
 		if opts.CertFile != "" || opts.KeyFile != "" || opts.CAFile != "" || opts.Insecure || opts.DisableKeepAlive {
 			return nil, fmt.Errorf("h2c is plaintext HTTP/2 and can't be combined with insecure/cert/key/ca/disable-keepalive options")
@@ -181,17 +200,23 @@ func newHTTPClient(opts HTTPOptions) (*http.Client, error) {
 		return nil, err
 	}
 
-	transport := &http.Transport{
-		MaxIdleConnsPerHost: 100,
-		TLSClientConfig:     tlsConfig,
-		DisableKeepAlives:   opts.DisableKeepAlive,
-	}
-	if opts.MaxIdleConns > 0 {
-		transport.MaxIdleConnsPerHost = opts.MaxIdleConns
+	var rt http.RoundTripper
+	if opts.HTTP3 {
+		rt = &http3.Transport{TLSClientConfig: tlsConfig}
+	} else {
+		transport := &http.Transport{
+			MaxIdleConnsPerHost: 100,
+			TLSClientConfig:     tlsConfig,
+			DisableKeepAlives:   opts.DisableKeepAlive,
+		}
+		if opts.MaxIdleConns > 0 {
+			transport.MaxIdleConnsPerHost = opts.MaxIdleConns
+		}
+		rt = transport
 	}
 
 	client := &http.Client{
-		Transport: transport,
+		Transport: rt,
 		Timeout:   opts.Timeout,
 	}
 	if !opts.FollowRedirects {
@@ -202,10 +227,36 @@ func newHTTPClient(opts HTTPOptions) (*http.Client, error) {
 	return client, nil
 }
 
+// closeClient releases a client built by newHTTPClient. CloseIdleConnections
+// covers the net/http transports; an HTTP/3 transport additionally owns QUIC
+// connections and UDP sockets that only Close (io.Closer) tears down.
+func closeClient(c *http.Client) {
+	c.CloseIdleConnections()
+	if closer, ok := c.Transport.(io.Closer); ok {
+		closer.Close()
+	}
+}
+
+// requireHTTPSForHTTP3 is the construction-time check behind HTTPOptions.HTTP3:
+// QUIC is always TLS, so a literal non-https URL can never work, and — like any
+// URL that fails with no network I/O — would otherwise let the worker loop
+// free-spin when no --rate is set. A templated URL can't be checked until render
+// time and is left to fail per request.
+func requireHTTPSForHTTP3(f httpFields) error {
+	if strings.Contains(f.rawURL, "{{") {
+		return nil
+	}
+	if u, err := url.Parse(f.rawURL); err == nil && u.Scheme != "https" {
+		return fmt.Errorf("invalid url %q: http3 requires an https:// URL (QUIC is always TLS)", f.rawURL)
+	}
+	return nil
+}
+
 // httpFields holds one request template's fields pre-parsed into tmpl.Field
 // once at construction time, so per-request rendering is cheap.
 type httpFields struct {
 	method        string
+	rawURL        string // the URL template source, after BaseURL resolution
 	url           tmpl.Field
 	query         map[string]tmpl.Field
 	header        map[string]tmpl.Field
@@ -273,7 +324,7 @@ func compileHTTPFields(method, rawURL string, query, header map[string]string, b
 		}
 	}
 
-	return httpFields{method: method, url: urlField, query: q, header: h, body: bodyField, rawBody: rawBody, expectStatus: expectStatus, expectHeaders: expectHeaders, expectBody: expectBody}, nil
+	return httpFields{method: method, rawURL: rawURL, url: urlField, query: q, header: h, body: bodyField, rawBody: rawBody, expectStatus: expectStatus, expectHeaders: expectHeaders, expectBody: expectBody}, nil
 }
 
 // resolveBaseURL prepends base to url if url starts with "/".
@@ -509,6 +560,11 @@ func NewHTTPGenerator(targets []HTTPTarget, opts HTTPOptions) (*HTTPGenerator, e
 		if err != nil {
 			return nil, err
 		}
+		if opts.HTTP3 {
+			if err := requireHTTPSForHTTP3(f); err != nil {
+				return nil, err
+			}
+		}
 		compiled[i] = f
 	}
 
@@ -522,7 +578,7 @@ func NewHTTPGenerator(targets []HTTPTarget, opts HTTPOptions) (*HTTPGenerator, e
 func (a *HTTPGenerator) Protocol() string { return "http" }
 
 func (a *HTTPGenerator) Close() error {
-	a.client.CloseIdleConnections()
+	closeClient(a.client)
 	a.feeder.Close()
 	return nil
 }

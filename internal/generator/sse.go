@@ -47,7 +47,7 @@ type SSETarget struct {
 
 // SSEOptions configures the transport and per-VU data shared by every stream.
 // HTTP carries the usual transport settings (Timeout, Insecure, certs/CA,
-// H2C, MaxResponseBody, BaseURL, Feeder) — Timeout bounds connecting
+// H2C, HTTP3, MaxResponseBody, BaseURL, Feeder) — Timeout bounds connecting
 // and receiving response headers, not the stream itself (see SSETarget).
 // MaxResponseBody caps the bytes read per stream; the stream then looks like
 // the server closed it.
@@ -102,6 +102,12 @@ func NewSSEGenerator(target SSETarget, opts SSEOptions) (*SSEGenerator, error) {
 		return nil, err
 	}
 
+	if opts.HTTP.HTTP3 {
+		if err := requireHTTPSForHTTP3(f); err != nil {
+			return nil, err
+		}
+	}
+
 	client, err := newHTTPClient(opts.HTTP)
 	if err != nil {
 		return nil, err
@@ -130,7 +136,7 @@ func NewSSEGenerator(target SSETarget, opts SSEOptions) (*SSEGenerator, error) {
 func (a *SSEGenerator) Protocol() string { return "sse" }
 
 func (a *SSEGenerator) Close() error {
-	a.client.CloseIdleConnections()
+	closeClient(a.client)
 	a.feeder.Close()
 	return nil
 }

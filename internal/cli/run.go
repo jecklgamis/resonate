@@ -509,6 +509,7 @@ func buildSSEGenerator(cfg config.SSEConfig) (generator.Generator, error) {
 	opts.HTTP.KeyFile = cfg.KeyFile
 	opts.HTTP.CAFile = cfg.CAFile
 	opts.HTTP.H2C = cfg.H2C
+	opts.HTTP.HTTP3 = cfg.HTTP3
 	opts.Identities = cfg.Identities
 
 	if cfg.Feeder.File != "" {
@@ -555,6 +556,7 @@ func httpOptionsFrom(cfg config.HTTPConfig) (generator.HTTPOptions, error) {
 	opts.KeyFile = cfg.KeyFile
 	opts.CAFile = cfg.CAFile
 	opts.H2C = cfg.H2C
+	opts.HTTP3 = cfg.HTTP3
 	opts.DisableKeepAlive = cfg.DisableKeepAlive
 
 	if cfg.Feeder.File != "" {

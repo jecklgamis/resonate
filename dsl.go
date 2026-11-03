@@ -441,6 +441,20 @@ func (s *Scenario) Insecure() *Scenario {
 	return s
 }
 
+// HTTP3 sends every request over HTTP/3 (HTTP over QUIC, on UDP) instead of
+// HTTP/1.1 or HTTP/2. QUIC is always TLS, so every URL must be https:// — a plain
+// http:// URL (or a relative one resolving against an http:// BaseURL) makes
+// Build()/Run() fail up front. It can't be combined with h2c or disabled
+// keep-alive, and doesn't apply to a WebSocket scenario (Build() reports that).
+func (s *Scenario) HTTP3() *Scenario {
+	if s.ws != nil {
+		s.deferErr(fmt.Errorf("resonate: HTTP3 doesn't apply to a WebSocket scenario"))
+		return s
+	}
+	s.httpOpts.HTTP3 = true
+	return s
+}
+
 func (s *Scenario) Rate(reqPerSec float64) *Scenario {
 	s.opts.Rate = reqPerSec
 	return s
@@ -575,6 +589,10 @@ func (s *Scenario) Binary() *Scenario {
 func (s *Scenario) Build() (Generator, error) {
 	if s.buildErr != nil {
 		return nil, s.buildErr
+	}
+	if s.ws != nil && s.httpOpts.HTTP3 {
+		// HTTP3() ahead of WS(): the method itself couldn't know yet.
+		return nil, fmt.Errorf("resonate: HTTP3 doesn't apply to a WebSocket scenario")
 	}
 	isFlow := len(s.flow) > 0 || len(s.setup) > 0
 	if s.ws != nil && (isFlow || len(s.targets) > 0) {

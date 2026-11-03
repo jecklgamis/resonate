@@ -354,11 +354,15 @@
         },
         "h2c": {
           "type": "boolean",
-          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options and disable_keepalive."
+          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options, http3 and disable_keepalive."
+        },
+        "http3": {
+          "type": "boolean",
+          "description": "Use HTTP/3 (QUIC over UDP) for every request. Every url must be https://. Mutually exclusive with h2c and disable_keepalive."
         },
         "disable_keepalive": {
           "type": "boolean",
-          "description": "Disable connection reuse; mutually exclusive with h2c."
+          "description": "Disable connection reuse; mutually exclusive with h2c and http3."
         }
       },
       "oneOf": [
@@ -787,7 +791,11 @@
         },
         "h2c": {
           "type": "boolean",
-          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options."
+          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options and http3."
+        },
+        "http3": {
+          "type": "boolean",
+          "description": "Use HTTP/3 (QUIC over UDP). The url must be https://. Mutually exclusive with h2c."
         }
       },
       "required": ["url"]

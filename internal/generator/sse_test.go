@@ -501,3 +501,44 @@ func TestSSEGeneratorRunEndingWhileConnectingIsNotAFailure(t *testing.T) {
 		t.Fatalf("want a 'connect timed out' failure on a live run, got %+v", res)
 	}
 }
+
+func TestSSEGeneratorOverHTTP3(t *testing.T) {
+	ca := newTestCA(t)
+	base, caFile := startH3Server(t, ca, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		send := eventStream(w)
+		for i := 0; i < 3; i++ {
+			send(fmt.Sprintf("data: %s %d\n\n", r.Proto, i))
+		}
+	}))
+
+	opts := sseOpts()
+	opts.HTTP.HTTP3 = true
+	opts.HTTP.CAFile = caFile
+	g, err := NewSSEGenerator(SSETarget{URL: base + "/events", Events: 3}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+
+	res := g.Do(context.Background(), 0)
+	if len(res) != 4 {
+		t.Fatalf("want connect + 3 events, got %d: %+v", len(res), res)
+	}
+	for i, r := range res {
+		if !r.Success() {
+			t.Fatalf("result %d failed: %+v", i, r)
+		}
+	}
+	// "data: HTTP/3.0 0\n\n" proves the stream really rode QUIC.
+	if res[1].BytesIn != int64(len("data: HTTP/3.0 0\n\n")) {
+		t.Fatalf("first event BytesIn = %d, want %d", res[1].BytesIn, len("data: HTTP/3.0 0\n\n"))
+	}
+}
+
+func TestNewSSEGeneratorHTTP3RequiresHTTPS(t *testing.T) {
+	opts := sseOpts()
+	opts.HTTP.HTTP3 = true
+	if _, err := NewSSEGenerator(SSETarget{URL: "http://example.test/stream"}, opts); err == nil || !strings.Contains(err.Error(), "https") {
+		t.Fatalf("want an https-required error, got %v", err)
+	}
+}

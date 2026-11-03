@@ -34,6 +34,7 @@ func newHitCommand() *cobra.Command {
 		keyFile      string
 		caFile       string
 		h2c          bool
+		http3        bool
 		noKeepalive  bool
 		expectStatus []int
 		expectHeader []string
@@ -124,6 +125,7 @@ func newHitCommand() *cobra.Command {
 					KeyFile:          keyFile,
 					CAFile:           caFile,
 					H2C:              h2c,
+					HTTP3:            http3,
 					DisableKeepAlive: noKeepalive,
 				},
 			)
@@ -167,7 +169,8 @@ func newHitCommand() *cobra.Command {
 	cmd.Flags().StringVar(&keyFile, "key", "", "Client private key file for mTLS (requires --cert)")
 	cmd.Flags().StringVar(&caFile, "ca-cert", "", "Additional CA certificate(s) (PEM) to trust, e.g. for a private/internal CA")
 	cmd.Flags().BoolVar(&h2c, "h2c", false, "Force HTTP/2 over plaintext (prior knowledge); mutually exclusive with --insecure/--cert/--key/--ca-cert")
-	cmd.Flags().BoolVar(&noKeepalive, "no-keepalive", false, "Disable HTTP keep-alive: open a fresh connection per request instead of reusing pooled connections; mutually exclusive with --h2c")
+	cmd.Flags().BoolVar(&http3, "http3", false, "Use HTTP/3 (QUIC over UDP) for every request; the URL must be https://. Mutually exclusive with --h2c and --no-keepalive")
+	cmd.Flags().BoolVar(&noKeepalive, "no-keepalive", false, "Disable HTTP keep-alive: open a fresh connection per request instead of reusing pooled connections; mutually exclusive with --h2c and --http3")
 	cmd.Flags().IntSliceVar(&expectStatus, "expect-status", nil, "Comma-separated status codes that count as success (overrides the default 2xx/3xx check), e.g. --expect-status 200,201,404")
 	cmd.Flags().StringArrayVar(&expectHeader, "expect-header", nil, "Response header check \"Key: Value\" (exact match), or \"Key:\" to just require it's present (repeatable)")
 	cmd.Flags().StringArrayVar(&expectBody, "expect-body", nil, "Response body check \"rule=value\" using the same rule language as extract (\"json:<JSONPath>\", \"yaml:<JSONPath>\", \"xml:<XPath>\"), e.g. --expect-body 'json:status=ok' (repeatable)")
