@@ -18,7 +18,9 @@ type Generator = generator.Generator
 // {{ }} template expressions (see "Request templating" in the README).
 type HTTPTarget = generator.HTTPTarget
 
-// HTTPOptions configures the transport shared by all requests.
+// HTTPOptions configures the transport shared by all requests, including
+// the HTTP version: the default negotiates HTTP/1.1 or HTTP/2 over TLS, H2C
+// forces plaintext HTTP/2, and HTTP3 forces HTTP/3 (QUIC; https:// URLs only).
 type HTTPOptions = generator.HTTPOptions
 
 // HTTPGenerator issues independent HTTP requests, cycling through a set of
@@ -82,6 +84,30 @@ func DefaultWSOptions() WSOptions { return generator.DefaultWSOptions() }
 // iteration and exchanges its message sequence.
 func NewWSGenerator(target WSTarget, opts WSOptions) (*WSGenerator, error) {
 	return generator.NewWSGenerator(target, opts)
+}
+
+// --- SSE: open a Server-Sent Events stream, read events, close ---
+
+// SSETarget describes one Server-Sent Events stream: send a request, read the
+// text/event-stream response until Events events arrive and/or Duration
+// elapses, close. See the field docs for the exact stop and failure rules.
+type SSETarget = generator.SSETarget
+
+// SSEOptions configures the transport (via its HTTP field, so HTTP3, H2C,
+// Insecure, etc. all apply) and per-virtual-user identities.
+type SSEOptions = generator.SSEOptions
+
+// SSEGenerator opens a fresh stream every iteration and reports one Result
+// for the connect plus one per event received.
+type SSEGenerator = generator.SSEGenerator
+
+// DefaultSSEOptions returns SSEOptions with resonate's usual defaults (30s
+// connect timeout, redirects followed).
+func DefaultSSEOptions() SSEOptions { return generator.DefaultSSEOptions() }
+
+// NewSSEGenerator builds a Generator that opens target fresh every iteration.
+func NewSSEGenerator(target SSETarget, opts SSEOptions) (*SSEGenerator, error) {
+	return generator.NewSSEGenerator(target, opts)
 }
 
 // --- Feeders: CSV/JSON-driven request data ---

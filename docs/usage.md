@@ -5,14 +5,14 @@
 | | `resonate hit <url>` (CLI) | `resonate run <scenario.yaml>` (YAML) |
 | --- | --- | --- |
 | Input | CLI flags | YAML scenario file |
-| Protocol | HTTP only | HTTP or WebSocket (`protocol: ws`) |
+| Protocol | HTTP only | HTTP, WebSocket (`protocol: ws`) or Server-Sent Events (`protocol: sse`) |
 | Targets | One URL | Multiple targets (round-robin), or a multi-step `flow` |
 | State across requests | None | `flow` supports response chaining (`{{.Vars.*}}`) and per-VU `identities` |
 | Setup steps | Not available | `http.setup` — runs once per VU before its first iteration |
 | Ramping load | Flat only (`--rate`/`--workers`/`--max-workers`) | Flat or `load.stages` (ramp profiles) |
 | Assertions / CI gating | `--assert` (5 operators) | `assertions:` (7 condition kinds) |
 | Data-driven requests | Templating functions only | `http.feeder`/`ws.feeder` — one CSV/JSON row per iteration (`{{.Feeder.*}}`) |
-| mTLS / CA / h2c / keep-alive | Yes (`--cert`/`--key`/`--ca-cert`/`--h2c`/`--no-keepalive`) | Yes, as `http.*` fields |
+| mTLS / CA / HTTP/3 / h2c / keep-alive | Yes (`--cert`/`--key`/`--ca-cert`/`--http3`/`--h2c`/`--no-keepalive`) | Yes, as `http.*` fields |
 | Use case | Quick, one-off endpoint check | Reusable, checked-into-source-control scenarios; CI-gated load tests |
 
 Everything else is identical underneath: engine (open/closed model,
@@ -47,7 +47,7 @@ a file instead of `-d` — the latter skips templating, so it's also the
 safe choice for a body containing literal `{{ }}`.
 
 `resonate hit` is HTTP-only, flag-driven, single-target. For WebSocket,
-multi-target, multi-step flows, or anything reusable, use `resonate run`
+Server-Sent Events, multi-target, multi-step flows, or anything reusable, use `resonate run`
 instead. See the [CLI Reference](cli/resonate_hit.md) for every flag.
 
 ## `resonate run` — Scenario Files

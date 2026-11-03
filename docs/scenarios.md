@@ -2,7 +2,8 @@
 
 Scenario files (`resonate run <scenario.yaml>`) describe multi-target or
 reusable load tests in YAML. This page covers `http.targets`/`http.flow`,
-base URLs, feeders, identities, control flow, WebSocket, and assertions —
+base URLs, feeders, identities, control flow, WebSocket, Server-Sent
+Events, HTTP/3, and assertions —
 see [Execution Models](execution-models.md) for the `load:` block
 (`rate`, `workers`, `stages`, `iterations`).
 
@@ -55,8 +56,8 @@ http:
 A `url` that doesn't start with `/` (already absolute, or a `{{ }}`
 template) is left untouched; a relative `url` with no `base_url` set
 fails fast at construction, same as a malformed absolute URL. Only
-`targets`/`flow`/`setup` resolve against `base_url` — `ws` scenarios
-don't. See
+`targets`/`flow`/`setup` resolve against `base_url` — `ws` and `sse`
+scenarios don't. See
 [`examples/http-base-url.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-base-url.yaml).
 
 ## Feeders
@@ -232,6 +233,89 @@ dial, message sequence, and close. `binary: true` on a message sends it
 as a binary frame instead of text.
 
 See [`examples/ws-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/ws-basic.yaml).
+
+## Server-Sent Events
+
+`protocol: sse` (scenario files only) opens one stream per iteration:
+it sends the request, reads the `text/event-stream` response, then closes
+it. A fresh request is made every iteration — a stream isn't reused across
+iterations. `method` defaults to `GET`; `POST` with a `body` is the usual
+shape for streaming APIs. `url`, `query`, `headers` and `body` support
+templates, plus `identities` and `feeder` like the other protocols.
+
+```yaml
+protocol: sse
+
+load:
+  duration: 30s
+  workers: 20
+
+sse:
+  url: https://api.example.com/v1/stream
+  method: POST
+  headers:
+    Authorization: Bearer {{.Identity.token}}
+  body: '{"prompt":"hello from vu {{.VU}}"}'
+  events: 10        # succeed once 10 events arrive
+  duration: 15s     # ...fail if they haven't within 15s
+  timeout: 5s       # connect + response headers only
+  identities:
+    - token: abc123
+```
+
+**When a stream ends.** `events` and `duration` decide:
+
+| `events` | `duration` | Stream ends | Counts as |
+| --- | --- | --- | --- |
+| `N` | unset | after `N` events | success; the server closing or `timeout` elapsing first is a failure |
+| `N` | set | after `N` events | success; fewer than `N` when `duration` elapses is a failure |
+| unset | set | when `duration` elapses (or the server closes it) | success |
+| unset | unset | when the server closes it | success; still open after `timeout` is a failure — set `events` or `duration` for an endless stream |
+
+`timeout` bounds only connecting and receiving response headers, so a
+`duration` longer than `timeout` works. A run that ends mid-stream isn't
+counted as a failure.
+
+**What gets reported.** Each iteration yields one *connect* result
+(latency = time to response headers; fails on a non-2xx/3xx status or a
+`Content-Type` other than `text/event-stream`) plus one result per event
+(latency = the gap since the previous event, or since the headers for the
+first; bytes = that event's size on the wire, including any comment or
+keep-alive lines before it). Comment lines (`: ...`) and blocks with no
+`data:` field aren't events. A stream that ends unsuccessfully adds one
+final failed result carrying the reason. So `requests` in the report
+counts connects *and* events, the same way a WebSocket scenario counts its
+connect and each message.
+
+`h2c`, `http3`, `insecure`, `cert_file`/`key_file`/`ca_file` and
+`max_response_body` (which caps the bytes read per stream) are available
+under `sse`, like their `http.*` namesakes. See
+[`examples/sse-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/sse-basic.yaml).
+
+## HTTP/3
+
+`http.http3: true` (or `resonate hit --http3`) sends every request over
+HTTP/3 — HTTP over QUIC, on UDP — instead of HTTP/1.1 or HTTP/2.
+
+```yaml
+http:
+  http3: true
+  targets:
+    - url: https://localhost:8443/health
+```
+
+- **Opt-in, not negotiated.** resonate doesn't do `Alt-Svc` discovery, so
+  the target must speak HTTP/3 on its UDP port, or every request fails.
+- **`https://` only.** QUIC is always TLS 1.3; a literal `http://` url (or
+  a relative one resolving against an `http://` `base_url`) is rejected at
+  construction. A templated url can only fail per request.
+- `insecure`, `cert_file`/`key_file` (mTLS) and `ca_file` work as usual.
+- **Mutually exclusive** with `h2c` and `disable_keepalive` (QUIC
+  multiplexes everything over one connection and has no per-request
+  connection knob). `max_idle_conns` is ignored.
+- Also available for `sse` scenarios, and for flows.
+
+See [`examples/http-http3.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-http3.yaml).
 
 ## Assertions
 

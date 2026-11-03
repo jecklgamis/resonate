@@ -1,0 +1,14 @@
+# HTTP/3 (QUIC over UDP): every request uses HTTP/3, so every url must be https://.
+# Mutually exclusive with h2c and disable_keepalive.
+load:
+  duration: 30s
+  rate: 50
+  workers: 20
+
+http:
+  http3: true
+  insecure: true      # only for a self-signed dev target; prefer ca_file
+  timeout: 5s
+  targets:
+    - method: GET
+      url: https://localhost:8443/health

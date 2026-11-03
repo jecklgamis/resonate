@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/net/http2"
 
 	"github.com/jecklgamis/resonate/internal/tmpl"
@@ -94,6 +95,17 @@ type HTTPOptions struct {
 	// TLS-only concerns.
 	H2C bool
 
+	// HTTP3 forces HTTP/3 (HTTP over QUIC, UDP) for every request, via
+	// quic-go. Opt-in rather than negotiated: resonate doesn't do Alt-Svc
+	// discovery, so a target either speaks HTTP/3 on its UDP port or every
+	// request fails. QUIC is always TLS 1.3, so every URL must be https://
+	// (checked at construction); Insecure/CertFile/KeyFile/CAFile apply as
+	// usual. Mutually exclusive with H2C (a different, plaintext protocol)
+	// and DisableKeepAlive (quic-go's transport has no equivalent knob, so
+	// it would silently no-op). MaxIdleConns is ignored: QUIC multiplexes
+	// every request to a host over one connection.
+	HTTP3 bool
+
 	// DisableKeepAlive forces a fresh TCP (+TLS) connection per request
 	// instead of the default pooled/reused connections — useful for
 	// simulating "cold" clients or stress-testing a target's connection
@@ -128,6 +140,12 @@ func DefaultHTTPOptions() HTTPOptions {
 }
 
 func newHTTPClient(opts HTTPOptions) (*http.Client, error) {
+	if opts.HTTP3 && opts.H2C {
+		return nil, fmt.Errorf("http3 and h2c are different protocols and can't be combined")
+	}
+	if opts.HTTP3 && opts.DisableKeepAlive {
+		return nil, fmt.Errorf("disable-keepalive isn't supported with http3: QUIC multiplexes all requests over one connection")
+	}
 	if opts.H2C {
 		if opts.CertFile != "" || opts.KeyFile != "" || opts.CAFile != "" || opts.Insecure || opts.DisableKeepAlive {
 			return nil, fmt.Errorf("h2c is plaintext HTTP/2 and can't be combined with insecure/cert/key/ca/disable-keepalive options")
@@ -169,17 +187,23 @@ func newHTTPClient(opts HTTPOptions) (*http.Client, error) {
 		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
 
-	transport := &http.Transport{
-		MaxIdleConnsPerHost: 100,
-		TLSClientConfig:     tlsConfig,
-		DisableKeepAlives:   opts.DisableKeepAlive,
-	}
-	if opts.MaxIdleConns > 0 {
-		transport.MaxIdleConnsPerHost = opts.MaxIdleConns
+	var rt http.RoundTripper
+	if opts.HTTP3 {
+		rt = &http3.Transport{TLSClientConfig: tlsConfig}
+	} else {
+		transport := &http.Transport{
+			MaxIdleConnsPerHost: 100,
+			TLSClientConfig:     tlsConfig,
+			DisableKeepAlives:   opts.DisableKeepAlive,
+		}
+		if opts.MaxIdleConns > 0 {
+			transport.MaxIdleConnsPerHost = opts.MaxIdleConns
+		}
+		rt = transport
 	}
 
 	client := &http.Client{
-		Transport: transport,
+		Transport: rt,
 		Timeout:   opts.Timeout,
 	}
 	if !opts.FollowRedirects {
@@ -190,10 +214,36 @@ func newHTTPClient(opts HTTPOptions) (*http.Client, error) {
 	return client, nil
 }
 
+// closeClient releases a client built by newHTTPClient. CloseIdleConnections
+// covers the net/http transports; an HTTP/3 transport additionally owns QUIC
+// connections and UDP sockets that only Close (io.Closer) tears down.
+func closeClient(c *http.Client) {
+	c.CloseIdleConnections()
+	if closer, ok := c.Transport.(io.Closer); ok {
+		closer.Close()
+	}
+}
+
+// requireHTTPSForHTTP3 is the construction-time check behind HTTPOptions.HTTP3:
+// QUIC is always TLS, so a literal non-https URL can never work, and — like
+// any URL that fails with no network I/O — would otherwise let the worker
+// loop free-spin when no --rate is set. A templated URL can't be checked
+// until render time and is left to fail per request.
+func requireHTTPSForHTTP3(f httpFields) error {
+	if strings.Contains(f.rawURL, "{{") {
+		return nil
+	}
+	if u, err := url.Parse(f.rawURL); err == nil && u.Scheme != "https" {
+		return fmt.Errorf("invalid url %q: http3 requires an https:// URL (QUIC is always TLS)", f.rawURL)
+	}
+	return nil
+}
+
 // httpFields holds one request template's fields pre-parsed into tmpl.Field
 // once at construction time, so per-request rendering is cheap.
 type httpFields struct {
 	method        string
+	rawURL        string // the URL template source, after BaseURL resolution
 	url           tmpl.Field
 	query         map[string]tmpl.Field
 	header        map[string]tmpl.Field
@@ -261,7 +311,7 @@ func compileHTTPFields(method, rawURL string, query, header map[string]string, b
 		}
 	}
 
-	return httpFields{method: method, url: urlField, query: q, header: h, body: bodyField, rawBody: rawBody, expectStatus: expectStatus, expectHeaders: expectHeaders, expectBody: expectBody}, nil
+	return httpFields{method: method, rawURL: rawURL, url: urlField, query: q, header: h, body: bodyField, rawBody: rawBody, expectStatus: expectStatus, expectHeaders: expectHeaders, expectBody: expectBody}, nil
 }
 
 // resolveBaseURL prepends base to url if url starts with "/".
@@ -298,28 +348,25 @@ func validateLiteralURL(rawURL string) error {
 	return nil
 }
 
-// doHTTP renders f against data, sends the request over client, and returns
-// the Result. If extract is non-empty, the response body is buffered (rather
-// than streamed to io.Discard) and each extraction rule is evaluated against
-// it; successfully extracted values are returned in the second value.
-// maxBody caps how many response bytes are read/counted (0 = unlimited) —
-// the remainder, if any, is still drained to io.Discard so the connection
-// can be reused, it just isn't counted into BytesIn or buffered for extract.
-func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Data, extract map[string]string, maxBody int64) (Result, map[string]string) {
+// buildRequest renders f against data into a ready-to-send *http.Request,
+// returning the rendered body length alongside it (for BytesOut). Shared by
+// doHTTP and SSEGenerator; an error here means a template or URL failed
+// before any network I/O.
+func buildRequest(ctx context.Context, f httpFields, data tmpl.Data) (*http.Request, int, error) {
 	rawURL, err := f.url.Render(data)
 	if err != nil {
-		return Result{Timestamp: time.Now(), Error: fmt.Errorf("rendering url: %w", err), Protocol: "http"}, nil
+		return nil, 0, fmt.Errorf("rendering url: %w", err)
 	}
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
-		return Result{Timestamp: time.Now(), Error: fmt.Errorf("parsing url %q: %w", rawURL, err), Protocol: "http"}, nil
+		return nil, 0, fmt.Errorf("parsing url %q: %w", rawURL, err)
 	}
 	if len(f.query) > 0 {
 		q := parsedURL.Query()
 		for k, qf := range f.query {
 			v, err := qf.Render(data)
 			if err != nil {
-				return Result{Timestamp: time.Now(), Error: fmt.Errorf("rendering query %q: %w", k, err), Protocol: "http"}, nil
+				return nil, 0, fmt.Errorf("rendering query %q: %w", k, err)
 			}
 			q.Set(k, v)
 		}
@@ -336,7 +383,7 @@ func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Da
 	} else {
 		bodyStr, err := f.body.Render(data)
 		if err != nil {
-			return Result{Timestamp: time.Now(), Error: fmt.Errorf("rendering body: %w", err), Protocol: "http"}, nil
+			return nil, 0, fmt.Errorf("rendering body: %w", err)
 		}
 		bodyLen = len(bodyStr)
 		if bodyStr != "" {
@@ -346,14 +393,29 @@ func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Da
 
 	req, err := http.NewRequestWithContext(ctx, f.method, parsedURL.String(), bodyReader)
 	if err != nil {
-		return Result{Timestamp: time.Now(), Error: err, Protocol: "http"}, nil
+		return nil, 0, err
 	}
 	for k, hf := range f.header {
 		v, err := hf.Render(data)
 		if err != nil {
-			return Result{Timestamp: time.Now(), Error: fmt.Errorf("rendering header %q: %w", k, err), Protocol: "http"}, nil
+			return nil, 0, fmt.Errorf("rendering header %q: %w", k, err)
 		}
 		req.Header.Set(k, v)
+	}
+	return req, bodyLen, nil
+}
+
+// doHTTP renders f against data, sends the request over client, and returns
+// the Result. If extract is non-empty, the response body is buffered (rather
+// than streamed to io.Discard) and each extraction rule is evaluated against
+// it; successfully extracted values are returned in the second value.
+// maxBody caps how many response bytes are read/counted (0 = unlimited) —
+// the remainder, if any, is still drained to io.Discard so the connection
+// can be reused, it just isn't counted into BytesIn or buffered for extract.
+func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Data, extract map[string]string, maxBody int64) (Result, map[string]string) {
+	req, bodyLen, err := buildRequest(ctx, f, data)
+	if err != nil {
+		return Result{Timestamp: time.Now(), Error: err, Protocol: "http"}, nil
 	}
 
 	start := time.Now()
@@ -485,6 +547,11 @@ func NewHTTPGenerator(targets []HTTPTarget, opts HTTPOptions) (*HTTPGenerator, e
 		if err != nil {
 			return nil, err
 		}
+		if opts.HTTP3 {
+			if err := requireHTTPSForHTTP3(f); err != nil {
+				return nil, err
+			}
+		}
 		compiled[i] = f
 	}
 
@@ -498,7 +565,7 @@ func NewHTTPGenerator(targets []HTTPTarget, opts HTTPOptions) (*HTTPGenerator, e
 func (a *HTTPGenerator) Protocol() string { return "http" }
 
 func (a *HTTPGenerator) Close() error {
-	a.client.CloseIdleConnections()
+	closeClient(a.client)
 	a.feeder.Close()
 	return nil
 }

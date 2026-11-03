@@ -144,6 +144,14 @@ func NewFlowGenerator(flow, setup []FlowStep, opts FlowOptions) (*FlowGenerator,
 		return nil, fmt.Errorf("setup: %w", err)
 	}
 
+	if opts.HTTP.HTTP3 {
+		for _, steps := range [][]compiledStep{compiledFlow, compiledSetup} {
+			if err := requireHTTPSInSteps(steps); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	client, err := newHTTPClient(opts.HTTP)
 	if err != nil {
 		return nil, err
@@ -225,8 +233,25 @@ func compileStep(s FlowStep, baseURL string) (compiledStep, error) {
 
 func (a *FlowGenerator) Protocol() string { return "http" }
 
+// requireHTTPSInSteps applies requireHTTPSForHTTP3 to every request step,
+// recursing into repeat/during/if blocks.
+func requireHTTPSInSteps(steps []compiledStep) error {
+	for _, s := range steps {
+		if s.control != controlNone {
+			if err := requireHTTPSInSteps(s.nested); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := requireHTTPSForHTTP3(s.httpFields); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (a *FlowGenerator) Close() error {
-	a.client.CloseIdleConnections()
+	closeClient(a.client)
 	a.feeder.Close()
 	return nil
 }

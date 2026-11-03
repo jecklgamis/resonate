@@ -1,6 +1,6 @@
 # resonate
 
-A load generator for HTTP and WebSocket: `resonate hit <url>` for a
+A load generator for HTTP (1.1, 2, 3), WebSocket and Server-Sent Events: `resonate hit <url>` for a
 quick, flag-driven one-off run against a single URL, and
 `resonate run <scenario.yaml>` for reusable, multi-target/multi-step
 scenarios.
@@ -17,7 +17,7 @@ for the repo's top-level overview, see its
 
 | Feature | Details |
 | --- | --- |
-| Two entry points | `resonate hit <url>` — flag-driven, single-URL, quick runs; `resonate run <scenario.yaml>` — reusable, multi-target/multi-step/WebSocket |
+| Two entry points | `resonate hit <url>` — flag-driven, single-URL, quick runs; `resonate run <scenario.yaml>` — reusable, multi-target/multi-step/WebSocket/SSE |
 | Execution models | Closed model (fixed concurrency) and open model (constant-arrival-rate, auto-scaling concurrency to sustain a target rate) — flat or ramped via staged schedules |
 | Multi-step flows | Response chaining (`{{.Vars.*}}`), per-virtual-user identities, think-time/control flow (`pause`, `repeat`, `during`, `if`) |
 | Request templating | `{{ }}` expressions for unique IDs, random payloads, fresh auth headers |
@@ -25,9 +25,10 @@ for the repo's top-level overview, see its
 | Base URL & file bodies | `base_url` to avoid repeating a host per target; templated or raw file-sourced request bodies for large/binary payloads |
 | Response checks | Per-request `expect_status`/`expect_headers`/`expect_body`, matched via JSONPath, XPath, regex, or CSS selectors, overriding the default 2xx/3xx success criterion |
 | WebSocket support | Connect, send/receive a message sequence, chain extracted values the same way HTTP flows do |
+| Server-Sent Events | Open a stream per iteration, read N events and/or for a duration; reports time-to-headers and per-event gaps (`protocol: sse`) |
 | Assertions / CI gating | Non-zero exit on a failed threshold — `resonate hit --assert 'metric<op>threshold'` or a scenario file's `assertions:` (richer condition set: `gt`/`lt`/`is`/`in`/`around`/`deviatesAround`) |
 | Reporting | Four formats every run by default: stdout summary, self-contained HTML, JSON, raw per-request JSON Lines dump |
-| HTTP transport controls | mTLS, custom CA trust, h2c (HTTP/2 cleartext), keep-alive control |
+| HTTP transport controls | mTLS, custom CA trust, HTTP/3 (QUIC), h2c (HTTP/2 cleartext), keep-alive control |
 | Go library | Usable as `go get github.com/jecklgamis/resonate` — thin public facade over the CLI's engine, plus a fluent `Scenario` builder DSL |
 
 ## Quick Start

@@ -8,7 +8,7 @@
   "properties": {
     "protocol": {
       "type": "string",
-      "enum": ["http", "ws"],
+      "enum": ["http", "ws", "sse"],
       "default": "http",
       "description": "Scenario protocol. Defaults to HTTP."
     },
@@ -20,6 +20,9 @@
     },
     "ws": {
       "$ref": "#/$defs/websocket"
+    },
+    "sse": {
+      "$ref": "#/$defs/sse"
     },
     "assertions": {
       "type": "array",
@@ -42,13 +45,50 @@
       "then": {
         "required": ["ws"],
         "not": {
-          "required": ["http"]
+          "anyOf": [
+            {
+              "required": ["http"]
+            },
+            {
+              "required": ["sse"]
+            }
+          ]
         }
       },
       "else": {
-        "required": ["http"],
-        "not": {
-          "required": ["ws"]
+        "if": {
+          "properties": {
+            "protocol": {
+              "const": "sse"
+            }
+          },
+          "required": ["protocol"]
+        },
+        "then": {
+          "required": ["sse"],
+          "not": {
+            "anyOf": [
+              {
+                "required": ["http"]
+              },
+              {
+                "required": ["ws"]
+              }
+            ]
+          }
+        },
+        "else": {
+          "required": ["http"],
+          "not": {
+            "anyOf": [
+              {
+                "required": ["ws"]
+              },
+              {
+                "required": ["sse"]
+              }
+            ]
+          }
         }
       }
     }
@@ -276,11 +316,15 @@
         },
         "h2c": {
           "type": "boolean",
-          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options and disable_keepalive."
+          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options, http3 and disable_keepalive."
+        },
+        "http3": {
+          "type": "boolean",
+          "description": "Use HTTP/3 (QUIC over UDP) for every request. Every url must be https://. Mutually exclusive with h2c and disable_keepalive."
         },
         "disable_keepalive": {
           "type": "boolean",
-          "description": "Disable connection reuse; mutually exclusive with h2c."
+          "description": "Disable connection reuse; mutually exclusive with h2c and http3."
         }
       },
       "oneOf": [
@@ -498,6 +542,86 @@
         }
       },
       "required": ["url", "messages"]
+    },
+    "sse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A Server-Sent Events stream, opened fresh every iteration and read until events and/or duration is reached.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^(https?://|\\{\\{)",
+          "description": "Stream URL; supports templates."
+        },
+        "method": {
+          "type": "string",
+          "description": "HTTP method; defaults to GET."
+        },
+        "query": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "headers": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "body": {
+          "type": "string",
+          "description": "Request body template."
+        },
+        "body_file": {
+          "type": "string",
+          "description": "Path to a request body file; its contents are templated."
+        },
+        "raw_body_file": {
+          "type": "string",
+          "description": "Path to a request body file sent as-is, without templating. Takes priority over body and body_file."
+        },
+        "events": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "End the stream successfully after this many events; the stream closing or duration/timeout elapsing first is a failure. 0 means no event target."
+        },
+        "duration": {
+          "$ref": "#/$defs/duration"
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "insecure": {
+          "type": "boolean"
+        },
+        "max_response_body": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum bytes read per stream; 0 is unlimited."
+        },
+        "cert_file": {
+          "type": "string"
+        },
+        "key_file": {
+          "type": "string"
+        },
+        "ca_file": {
+          "type": "string"
+        },
+        "h2c": {
+          "type": "boolean",
+          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options and http3."
+        },
+        "http3": {
+          "type": "boolean",
+          "description": "Use HTTP/3 (QUIC over UDP). The url must be https://. Mutually exclusive with h2c."
+        }
+      },
+      "required": ["url"]
     },
     "wsMessage": {
       "type": "object",

@@ -2,9 +2,10 @@
 
 [![CI](https://github.com/jecklgamis/resonate/actions/workflows/ci.yml/badge.svg)](https://github.com/jecklgamis/resonate/actions/workflows/ci.yml)
 
-A load generator for HTTP and WebSocket: `resonate hit <url>` for
-quick, flag-driven one-off runs, `resonate run <scenario.yaml>` for
-reusable multi-target/multi-step/WebSocket scenarios, and the same
+A load generator for HTTP (1.1, 2, 3), WebSocket and Server-Sent Events:
+`resonate hit <url>` for quick, flag-driven one-off runs,
+`resonate run <scenario.yaml>` for reusable
+multi-target/multi-step/WebSocket/SSE scenarios, and the same
 engine as a Go library.
 
 > **Heads up**: this project is under active development and in alpha. APIs, flags, and the YAML schema may change without notice. Use at your own risk.
@@ -36,7 +37,7 @@ resonate hit http://localhost:8080/health --rate 50 --duration 30s --workers 20
 ```
 
 Every run writes a stdout summary plus `report.html`/`report.json`/
-`results.jsonl` by default. For multi-target/multi-step/WebSocket
+`results.jsonl` by default. For multi-target/multi-step/WebSocket/SSE
 scenarios in YAML, see [docs/usage.md](docs/usage.md) and
 [docs/scenarios.md](docs/scenarios.md).
 

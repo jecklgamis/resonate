@@ -29,6 +29,7 @@ resonate hit <url> [flags]
   -H, --header stringArray          Request header "Key: Value" (repeatable, templated)
   -h, --help                        help for hit
       --html-report string          Write a self-contained HTML report to this path ("" disables it) (default "report.html")
+      --http3                       Use HTTP/3 (QUIC over UDP) for every request; the URL must be https://. Mutually exclusive with --h2c/--no-keepalive
       --insecure                    Skip TLS certificate verification
       --iterations uint             Requests per virtual user before it departs (0 = runs for the whole test); with no --duration/--requests, total = --workers * --iterations
       --json                        Print the report as JSON
@@ -38,7 +39,7 @@ resonate hit <url> [flags]
       --max-response-body int       Max response bytes to read/count per request; the rest is discarded (0 = unlimited)
       --max-workers int             Open model: with --rate, allow concurrency to grow up to this many in-flight requests to sustain the target rate under latency, instead of capping at --workers (0 = disabled, closed model)
   -X, --method string               HTTP method (default "GET")
-      --no-keepalive                Disable HTTP keep-alive: open a fresh connection per request instead of reusing pooled connections; mutually exclusive with --h2c
+      --no-keepalive                Disable HTTP keep-alive: open a fresh connection per request instead of reusing pooled connections; mutually exclusive with --h2c and --http3
       --no-redirect                 Do not follow HTTP redirects
   -Q, --query stringArray           Query param "key=value" (repeatable, templated)
   -q, --quiet                       Suppress the periodic progress line on stderr

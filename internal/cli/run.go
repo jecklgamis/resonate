@@ -214,8 +214,10 @@ func buildGenerator(s *config.Scenario) (generator.Generator, error) {
 		return buildHTTPGenerator(s.HTTP)
 	case "ws":
 		return buildWSGenerator(s.WS)
+	case "sse":
+		return buildSSEGenerator(s.SSE)
 	default:
-		return nil, fmt.Errorf("unsupported protocol %q (expected \"http\" or \"ws\")", s.Protocol)
+		return nil, fmt.Errorf("unsupported protocol %q (expected \"http\", \"ws\" or \"sse\")", s.Protocol)
 	}
 }
 
@@ -406,6 +408,58 @@ func buildWSGenerator(cfg config.WSConfig) (generator.Generator, error) {
 	}, opts)
 }
 
+func buildSSEGenerator(cfg config.SSEConfig) (generator.Generator, error) {
+	if cfg.URL == "" {
+		return nil, fmt.Errorf("sse.url is required")
+	}
+
+	opts := generator.DefaultSSEOptions()
+	if cfg.Timeout != "" {
+		d, err := time.ParseDuration(cfg.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid sse.timeout: %w", err)
+		}
+		opts.HTTP.Timeout = d
+	}
+	duration, err := cfg.ParsedDuration()
+	if err != nil {
+		return nil, fmt.Errorf("invalid sse.duration: %w", err)
+	}
+	opts.HTTP.Insecure = cfg.Insecure
+	opts.HTTP.MaxResponseBody = cfg.MaxResponseBody
+	opts.HTTP.CertFile = cfg.CertFile
+	opts.HTTP.KeyFile = cfg.KeyFile
+	opts.HTTP.CAFile = cfg.CAFile
+	opts.HTTP.H2C = cfg.H2C
+	opts.HTTP.HTTP3 = cfg.HTTP3
+	opts.Identities = cfg.Identities
+
+	if cfg.Feeder.File != "" {
+		f, err := generator.NewFeeder(cfg.Feeder.File, cfg.Feeder.Mode)
+		if err != nil {
+			return nil, fmt.Errorf("sse.feeder: %w", err)
+		}
+		opts.HTTP.Feeder = f
+	}
+
+	// Reuse the HTTP target body resolution (body / body_file / raw_body_file).
+	body, rawBody, err := resolveBody(config.HTTPTargetConfig{URL: cfg.URL, Body: cfg.Body, BodyFile: cfg.BodyFile, RawBodyFile: cfg.RawBodyFile})
+	if err != nil {
+		return nil, fmt.Errorf("sse: %w", err)
+	}
+
+	return generator.NewSSEGenerator(generator.SSETarget{
+		Method:   cfg.Method,
+		URL:      cfg.URL,
+		Query:    cfg.Query,
+		Header:   cfg.Headers,
+		Body:     body,
+		RawBody:  rawBody,
+		Events:   cfg.Events,
+		Duration: duration,
+	}, opts)
+}
+
 func httpOptionsFrom(cfg config.HTTPConfig) (generator.HTTPOptions, error) {
 	opts := generator.DefaultHTTPOptions()
 	if cfg.Timeout != "" {
@@ -424,6 +478,7 @@ func httpOptionsFrom(cfg config.HTTPConfig) (generator.HTTPOptions, error) {
 	opts.KeyFile = cfg.KeyFile
 	opts.CAFile = cfg.CAFile
 	opts.H2C = cfg.H2C
+	opts.HTTP3 = cfg.HTTP3
 	opts.DisableKeepAlive = cfg.DisableKeepAlive
 
 	if cfg.Feeder.File != "" {

@@ -1,0 +1,18 @@
+# Server-Sent Events: open one stream per iteration, read 10 events, close.
+# Each iteration reports one connect Result plus one Result per event.
+protocol: sse
+
+load:
+  duration: 30s
+  workers: 20
+
+sse:
+  url: http://localhost:8080/events
+  events: 10          # succeed once 10 events arrive...
+  duration: 15s       # ...or fail if they haven't within 15s
+  timeout: 5s         # bounds connecting + response headers, not the stream
+  headers:
+    Authorization: Bearer {{.Identity.token}}
+  identities:
+    - token: abc123
+    - token: def456

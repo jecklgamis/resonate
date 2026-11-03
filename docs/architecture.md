@@ -15,11 +15,11 @@ four report formats (see [Reports](reports.md)).
   embedding the engine in your own program. `dsl.go`'s `Scenario` is the
   exception — a fluent builder with its own state (current
   request/message, a control-flow block stack) layered on top, covering
-  HTTP targets, flows, and WebSocket. See [Library](library.md) and
+  HTTP targets, flows, WebSocket, and SSE. See [Library](library.md) and
   `examples/dsl-examples`.
 - **`internal/generator`** — protocol-agnostic `Generator` interface plus
   `HTTPGenerator` (independent requests), `FlowGenerator` (multi-step,
-  response chaining, per-worker identities), and `WSGenerator` (WebSocket).
+  response chaining, per-worker identities), `WSGenerator` (WebSocket), and `SSEGenerator` (Server-Sent Events).
 - **`internal/tmpl`** — per-request templating (`{{ }}`) for URLs, query
   params, headers, bodies. See [Request Templating](usage.md#request-templating).
 - **`internal/engine`** — worker pool + rate limiter driving a

@@ -170,7 +170,9 @@ if err := resonate.WriteHTMLFile("report.html", summary.HTMLReport()); err != ni
 struct-literal API it's built on is still available for cases that want
 more control (e.g. building a `Generator` once and driving it with your
 own retry loop) — `resonate.NewHTTPGenerator`, `resonate.NewFlowGenerator`,
-`resonate.NewWSGenerator`, `resonate.Feeder`, `resonate.Run`,
+`resonate.NewWSGenerator`, `resonate.NewSSEGenerator` (Server-Sent
+Events; the fluent `Scenario` builder doesn't cover SSE),
+`resonate.Feeder`, `resonate.Run`,
 `resonate.Summary`, `resonate.Assertion`/`Evaluate` cover the same
 ground as `resonate hit`/`resonate run`, as Go APIs instead of flags/YAML:
 
