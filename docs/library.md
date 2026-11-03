@@ -206,7 +206,7 @@ opts := resonate.DefaultSSEOptions()
 opts.Identities = []map[string]string{{"token": "abc123"}}
 
 gen, err := resonate.NewSSEGenerator(resonate.SSETarget{
-	URL:      "http://localhost:8080/events",
+	URL:      "http://localhost:8765/events",
 	Header:   map[string]string{"Authorization": "Bearer {{.Identity.token}}"},
 	Events:   10,               // succeed once 10 events arrive...
 	Duration: 15 * time.Second, // ...or fail if they haven't by then

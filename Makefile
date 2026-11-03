@@ -20,6 +20,12 @@ run: build
 example-grpc-server:
 	go run ./examples/testgrpcserver $(ARGS)
 
+# The SSE example server (examples/testsseserver), a target for trying
+# examples/sse-*.yaml. Pass flags with ARGS, e.g. ARGS=-log-requests=false.
+.PHONY: example-sse-server
+example-sse-server:
+	go run ./examples/testsseserver $(ARGS)
+
 .PHONY: test
 test:
 	go test ./...

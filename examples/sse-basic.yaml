@@ -1,5 +1,9 @@
 # Server-Sent Events: open one stream per iteration, read 10 events, close.
 # Each iteration reports one connect Result plus one Result per event.
+#
+# Try it without a service of your own, using the example SSE server:
+#   make example-sse-server      # or: go run ./examples/testsseserver   (listens on :8765)
+#   resonate run examples/sse-basic.yaml --dry-run
 protocol: sse
 
 load:
@@ -7,7 +11,7 @@ load:
   workers: 20
 
 sse:
-  url: http://localhost:8080/events
+  url: http://localhost:8765/events
   events: 10          # succeed once 10 events arrive...
   duration: 15s       # ...or fail if they haven't within 15s
   timeout: 5s         # bounds connecting + response headers, not the stream

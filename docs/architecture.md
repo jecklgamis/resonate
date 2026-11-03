@@ -41,7 +41,8 @@ four report formats (see [Reports](reports.md)).
 - **`examples/`** — runnable scenarios, plus `examples/testgrpcserver`, a demo
   gRPC server (`make example-grpc-server`) implementing the services the gRPC
   examples call, with the schemas in `examples/proto`; it access-logs every
-  call it receives. See
+  call it receives. `examples/testsseserver` does the same for the SSE examples
+  (`make example-sse-server`): a stdlib-only SSE server with an access log. See
   [the gRPC guide](grpc.md#the-example-server).
 
 For the deeper design rationale (why `runStaged` doesn't use

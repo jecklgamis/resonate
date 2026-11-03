@@ -250,7 +250,7 @@ load:
   workers: 20
 
 sse:
-  url: http://localhost:8080/events
+  url: http://localhost:8765/events
   events: 10          # succeed once 10 events arrive...
   duration: 15s       # ...or fail if they haven't within 15s
   timeout: 5s         # bounds connecting + response headers, not the stream
@@ -272,7 +272,7 @@ load:
   workers: 10
 
 sse:
-  url: http://localhost:8080/v1/stream
+  url: http://localhost:8765/v1/stream
   method: POST
   headers:
     Content-Type: application/json
@@ -320,7 +320,57 @@ a failure. SSE doesn't reconnect or send `Last-Event-ID`, and doesn't look at
 event names or payloads; if you need to check what the events contain, that is
 what a future `expect_body` for events would be for.
 
-See [`examples/sse-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/sse-basic.yaml).
+See [`examples/sse-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/sse-basic.yaml)
+(a `GET` that reads 10 events) and
+[`examples/sse-post.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/sse-post.yaml)
+(a streaming API called with a `POST`).
+
+### Trying the SSE examples
+
+`examples/testsseserver` is a small Server-Sent Events server (standard library
+only) that serves what the SSE examples and the scenarios above call, so you can
+run and validate them without a service of your own. It keeps no state, so it is a
+demo target and not a benchmark.
+
+```sh
+make example-sse-server                  # listens on :8765
+resonate run examples/sse-basic.yaml --dry-run
+resonate run examples/sse-post.yaml --dry-run
+```
+
+| Endpoint | What it does | What it shows |
+| --- | --- | --- |
+| `GET /events` | Sends 12 events 20ms apart (with a keep-alive comment before every fourth), then closes. `?n=` and `?interval=` override. | `events: 10` ending a stream the server would have kept going. |
+| `POST /v1/stream` | An LLM-style API: streams the `prompt` a word at a time as `{"token": ...}` events, then `[DONE]`, then closes. A missing or empty prompt is a `400`. | A stream the server ends itself, so no `events` or `duration`. |
+| `GET /endless` | Never ends. | A stream with no bound failing at `timeout`. |
+| `GET /json` | A `200` that isn't an event stream. | The content-type check. |
+| `GET /error` | `503`, or the status in `?code=`. | A non-2xx connect. |
+| `GET /healthz` | `ok`. | That the server is up. |
+
+Flags: `-addr` (default `:8765`; a scenario's `url` must name the same port),
+`-events` (the `/events` count, default 12), `-event-interval` (default 20ms),
+`-log-requests` and `-stats-interval` (below).
+
+**Logging.** The server logs like an access log: a `call` line when a request
+arrives and a `done` line when it finishes (status, duration, events sent, bytes),
+plus a line about what each stream did. A stream shows up the moment it opens, not
+only when it ends, and credentials are never echoed (only the scheme of an
+`Authorization` header). When resonate reads its `events` and hangs up, the server
+notices:
+
+```text
+call GET   /events                from=[::1]:51843 auth=Bearer
+events: stream opened, 12 events 20ms apart
+events: client went away after 10 of 12 events
+done GET   /events                200 204.514ms events=10 bytes=372 from=[::1]:51843
+```
+
+That is a lot of output under load, so for a performance run pass
+`-log-requests=false` (`make example-sse-server ARGS=-log-requests=false`): the
+per-request lines stop and, every `-stats-interval` (default 10s) while there is
+traffic, one summary line is printed instead. A request counts as failed when the
+server returns a 5xx; a 4xx, such as the `400` for a missing prompt, is the client's
+doing and doesn't. Ctrl-C prints the totals and shuts down.
 
 ## gRPC
 

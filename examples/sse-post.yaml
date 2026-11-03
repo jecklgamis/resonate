@@ -1,0 +1,19 @@
+# Server-Sent Events from a streaming API: a POST whose response is a stream the
+# server ends itself (here, a token per event, then [DONE]), so neither `events`
+# nor `duration` is needed — the stream is read until the server closes it.
+#
+# Try it without a service of your own, using the example SSE server:
+#   make example-sse-server      # or: go run ./examples/testsseserver   (listens on :8765)
+#   resonate run examples/sse-post.yaml --dry-run
+protocol: sse
+
+load:
+  duration: 30s
+  workers: 10
+
+sse:
+  url: http://localhost:8765/v1/stream
+  method: POST
+  headers:
+    Content-Type: application/json
+  body: '{"prompt":"hello from vu {{.VU}} in iteration {{.Seq}}"}'
