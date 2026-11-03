@@ -14,6 +14,12 @@ install:
 run: build
 	./$(BIN_DIR)/$(BINARY) $(ARGS)
 
+# The gRPC example server (examples/testgrpcserver), a target for trying
+# examples/grpc-*.yaml. Pass flags with ARGS, e.g. ARGS=-reflection=false.
+.PHONY: example-grpc-server
+example-grpc-server:
+	go run ./examples/testgrpcserver $(ARGS)
+
 .PHONY: test
 test:
 	go test ./...

@@ -214,8 +214,10 @@ func buildGenerator(s *config.Scenario) (generator.Generator, error) {
 		return buildHTTPGenerator(s.HTTP)
 	case "ws":
 		return buildWSGenerator(s.WS)
+	case "grpc":
+		return buildGRPCGenerator(s.GRPC)
 	default:
-		return nil, fmt.Errorf("unsupported protocol %q (expected \"http\" or \"ws\")", s.Protocol)
+		return nil, fmt.Errorf("unsupported protocol %q (expected \"http\", \"ws\" or \"grpc\")", s.Protocol)
 	}
 }
 
@@ -403,6 +405,82 @@ func buildWSGenerator(cfg config.WSConfig) (generator.Generator, error) {
 		URL:      cfg.URL,
 		Header:   cfg.Headers,
 		Messages: messages,
+	}, opts)
+}
+
+func buildGRPCGenerator(cfg config.GRPCConfig) (generator.Generator, error) {
+	if cfg.Address == "" {
+		return nil, fmt.Errorf("grpc.address is required")
+	}
+	if len(cfg.Calls) == 0 {
+		return nil, fmt.Errorf("grpc.calls must have at least one entry")
+	}
+
+	opts := generator.DefaultGRPCOptions()
+	if cfg.Timeout != "" {
+		d, err := time.ParseDuration(cfg.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid grpc.timeout: %w", err)
+		}
+		opts.Timeout = d
+	}
+	if cfg.Connections != 0 {
+		opts.Connections = cfg.Connections
+	}
+	opts.Plaintext = cfg.Plaintext
+	opts.Insecure = cfg.Insecure
+	opts.CAFile = cfg.CAFile
+	opts.CertFile = cfg.CertFile
+	opts.KeyFile = cfg.KeyFile
+	opts.ProtoFiles = cfg.ProtoFiles
+	opts.ImportPaths = cfg.ImportPaths
+	opts.DescriptorSet = cfg.DescriptorSet
+	opts.Identities = cfg.Identities
+
+	if cfg.Feeder.File != "" {
+		f, err := generator.NewFeeder(cfg.Feeder.File, cfg.Feeder.Mode)
+		if err != nil {
+			return nil, fmt.Errorf("grpc.feeder: %w", err)
+		}
+		opts.Feeder = f
+	}
+
+	calls := make([]generator.GRPCCall, 0, len(cfg.Calls))
+	for i, c := range cfg.Calls {
+		if c.Message != "" && c.MessageFile != "" {
+			fmt.Fprintf(os.Stderr, "warning: grpc.calls[%d]: message is ignored because message_file is also set\n", i)
+		}
+		msg, err := c.ResolveMessage()
+		if err != nil {
+			return nil, fmt.Errorf("grpc.calls[%d]: reading message_file: %w", i, err)
+		}
+		duration, err := c.ParsedDuration()
+		if err != nil {
+			return nil, fmt.Errorf("invalid grpc.calls[%d].duration: %w", i, err)
+		}
+		interval, err := c.ParsedSendInterval()
+		if err != nil {
+			return nil, fmt.Errorf("invalid grpc.calls[%d].send_interval: %w", i, err)
+		}
+		calls = append(calls, generator.GRPCCall{
+			Method:       c.Method,
+			Message:      msg,
+			Messages:     c.Messages,
+			Repeat:       c.Repeat,
+			SendInterval: interval,
+			Receive:      c.Receive,
+			Duration:     duration,
+			Metadata:     c.Metadata,
+			Extract:      c.Extract,
+			ExpectCode:   c.ExpectCode,
+			ExpectBody:   c.ExpectBody,
+		})
+	}
+
+	return generator.NewGRPCGenerator(generator.GRPCTarget{
+		Address:  cfg.Address,
+		Metadata: cfg.Metadata,
+		Calls:    calls,
 	}, opts)
 }
 

@@ -1,0 +1,44 @@
+# gRPC against a server that has reflection turned OFF: resonate takes the
+# schema from the .proto file instead, compiling it in-process (no protoc).
+#
+# Run from the repository root, since proto_files paths are relative to where
+# you run resonate:
+#   resonate run examples/grpc-proto-files.yaml --dry-run
+#
+# To try it without a service of your own, run the example server with its
+# reflection turned off, so the schema really has to come from the .proto:
+#   make example-grpc-server ARGS=-reflection=false
+#   (or: go run ./examples/testgrpcserver -reflection=false)
+protocol: grpc
+
+load:
+  duration: 30s
+  rate: 50
+  workers: 20
+
+grpc:
+  address: localhost:50051
+  plaintext: true
+  timeout: 5s
+
+  # The schema. import_paths defaults to the directories containing the
+  # proto_files; set it when your files import each other from elsewhere:
+  #   import_paths: [examples/proto, third_party]
+  proto_files: [examples/proto/user.proto]
+
+  # Alternative: a pre-built descriptor set instead of .proto sources. Build
+  # it once with protoc (--include_imports is required) or buf:
+  #   protoc --include_imports --descriptor_set_out=api.pb examples/proto/user.proto
+  #   buf build -o api.pb
+  # descriptor_set: api.pb
+
+  calls:
+    - method: acme.user.v1.UserService/CreateUser
+      message: '{"name":"{{randChoice "alice" "bob" "carol"}}","age":{{randInt 18 65}}}'
+      extract:
+        user_id: json:id
+
+    - method: acme.user.v1.UserService/GetUser
+      message: '{"id":"{{.Vars.user_id}}"}'
+      expect_body:
+        json:id: ""           # expected values are literal, not templated; "" = just require it

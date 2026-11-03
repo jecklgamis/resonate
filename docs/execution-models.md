@@ -4,7 +4,10 @@
 flight; `rate` is the target number of *iterations* per second across all
 of them combined — independent knobs, not multiplied together. An
 iteration is one pass through `targets` (a single request) or `flow` (all
-its steps).
+its steps) — for the other protocols, one WebSocket connection's whole
+message sequence, or one gRPC `calls` sequence (a streaming call counts as
+part of one iteration, however many messages it carries). See
+[gRPC](grpc.md#load-profiles) for what that means for `rate` and the report.
 
 If `workers` isn't set but `rate` is, it defaults to `max(10, ceil(rate))`.
 If the target is slower than that (or `workers` was set too low), actual

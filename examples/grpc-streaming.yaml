@@ -1,0 +1,43 @@
+# gRPC streaming. The method's schema decides the kind; the call's fields say
+# how to drive it. Each received message is one result in the report.
+#
+# Try it without a service of your own, using the example server (it implements
+# acme.user.v1.UserService and acme.feed.v1.Feed from examples/proto):
+#   make example-grpc-server      # or: go run ./examples/testgrpcserver
+#   resonate run examples/grpc-streaming.yaml --dry-run
+protocol: grpc
+
+load:
+  duration: 30s
+  workers: 20
+
+grpc:
+  address: localhost:50051
+  plaintext: true
+  timeout: 10s              # also the cap for a stream with no receive/duration
+  calls:
+    # Server streaming: one request, many responses. Listen for 5 messages.
+    - method: acme.feed.v1.Feed/Subscribe
+      message: '{"topic":"orders"}'
+      receive: 5
+      expect_body:
+        json:topic: orders  # every received message must match
+      extract:
+        last_id: json:id    # the last message's value is kept
+
+    # Client streaming: send a sequence, get one response. 10 sends, 50ms apart.
+    - method: acme.feed.v1.Feed/Upload
+      messages:
+        - '{"id":"{{uuid}}","payload":"{{randInt 1 1000}}"}'
+      repeat: 10
+      send_interval: 50ms
+      expect_body:
+        json:accepted: "10"
+
+    # Bidirectional: sends and receives run concurrently. Stop after 3 replies.
+    - method: acme.feed.v1.Feed/Chat
+      messages:
+        - '{"text":"hello from vu {{.VU}}"}'
+        - '{"text":"seen up to {{.Vars.last_id}}"}'
+      receive: 3
+      duration: 5s          # ...or fail if they haven't arrived within 5s

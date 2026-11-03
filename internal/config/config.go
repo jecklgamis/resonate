@@ -11,10 +11,11 @@ import (
 
 // Scenario is the top-level shape of a resonate config file.
 type Scenario struct {
-	Protocol   string            `yaml:"protocol"` // "http" or "ws"
+	Protocol   string            `yaml:"protocol"` // "http", "ws" or "grpc"
 	Load       LoadConfig        `yaml:"load"`
 	HTTP       HTTPConfig        `yaml:"http"`
 	WS         WSConfig          `yaml:"ws"`
+	GRPC       GRPCConfig        `yaml:"grpc"`
 	Assertions []AssertionConfig `yaml:"assertions"`
 }
 
@@ -364,6 +365,135 @@ type WSMessageConfig struct {
 	// rule language as Extract (json:<path>/yaml:<path>/xml:<path> only,
 	// same caveat as Extract) — only meaningful alongside Wait: true.
 	ExpectBody map[string]string `yaml:"expect_body"`
+}
+
+// GRPCConfig describes gRPC calls — unary and streaming: each iteration makes
+// Calls in order over a shared connection, stopping at the first failure.
+//
+// The schema (which messages a method takes and returns) comes from
+// ProtoFiles, else DescriptorSet, else the server's reflection service.
+type GRPCConfig struct {
+	// Address is "host:port" (or any address grpc-go's resolver accepts).
+	Address string `yaml:"address"`
+
+	// Plaintext disables TLS. Otherwise TLS is used, configured by Insecure/
+	// CAFile/CertFile/KeyFile like their http.* namesakes.
+	Plaintext bool   `yaml:"plaintext"`
+	Insecure  bool   `yaml:"insecure"`
+	CAFile    string `yaml:"ca_file"`
+	CertFile  string `yaml:"cert_file"`
+	KeyFile   string `yaml:"key_file"`
+
+	// Timeout is the per-call deadline (and the schema-lookup deadline).
+	Timeout string `yaml:"timeout"`
+
+	// Connections spreads virtual users over this many separate gRPC
+	// connections (default 1). One connection is one HTTP/2 connection, which
+	// servers typically cap at ~100 concurrent streams — raise this at high
+	// concurrency or calls queue client-side and latency inflates.
+	Connections int `yaml:"connections"`
+
+	// ProtoFiles/ImportPaths: compile .proto sources. ImportPaths default to
+	// the directories containing ProtoFiles.
+	ProtoFiles  []string `yaml:"proto_files"`
+	ImportPaths []string `yaml:"import_paths"`
+
+	// DescriptorSet: a FileDescriptorSet file from
+	// `protoc --descriptor_set_out=FILE --include_imports`.
+	DescriptorSet string `yaml:"descriptor_set"`
+
+	// Metadata is sent with every call (gRPC headers); values may embed
+	// {{ }} template expressions.
+	Metadata map[string]string `yaml:"metadata"`
+
+	// Identities: an optional pool of named values (e.g. tokens), one per
+	// virtual user, exposed as {{.Identity.<key>}}.
+	Identities []map[string]string `yaml:"identities"`
+
+	// Feeder: an optional CSV/JSON data source, one row per iteration,
+	// exposed as {{.Feeder.<column>}}.
+	Feeder FeederConfig `yaml:"feeder"`
+
+	Calls []GRPCCallConfig `yaml:"calls"`
+}
+
+// GRPCCallConfig is one RPC. Message is the request as protobuf JSON and may
+// embed {{ }} expressions; MessageFile reads it from a file instead (also
+// templated). The response is rendered back to protobuf JSON (lowerCamelCase
+// field names, zero values included) for Extract/ExpectBody.
+//
+// The method's schema says whether it is unary, server-streaming,
+// client-streaming or bidirectional, and which of the fields below it takes:
+// unary and server-streaming methods take Message (one request); client-
+// streaming and bidirectional ones take Messages (a sequence). Receive and
+// Duration bound a stream that has server responses.
+type GRPCCallConfig struct {
+	// Method is "package.Service/Method".
+	Method      string `yaml:"method"`
+	Message     string `yaml:"message"`
+	MessageFile string `yaml:"message_file"`
+
+	// Messages are the requests of a client-streaming or bidirectional call,
+	// sent in order (each rendered fresh as it is sent), the whole list
+	// Repeat times (default 1), SendInterval apart if set.
+	Messages     []string `yaml:"messages"`
+	Repeat       int      `yaml:"repeat"`
+	SendInterval string   `yaml:"send_interval"`
+
+	// Receive ends a server-streaming or bidirectional call successfully
+	// after this many responses; the server closing the stream first is a
+	// failure. Duration is a listen window: with Receive unset, its elapsing
+	// is the normal successful end; with Receive set, it is the deadline for
+	// getting them. With neither, the stream is read until the server closes
+	// it, and still being open at grpc.timeout is a failure.
+	Receive  int    `yaml:"receive"`
+	Duration string `yaml:"duration"`
+
+	// Metadata is sent with this call, overriding same-named keys in
+	// grpc.metadata.
+	Metadata map[string]string `yaml:"metadata"`
+
+	// Extract pulls values from the response into {{.Vars.<name>}} for later
+	// calls. Same rule language as http extract; header:<Name> reads response
+	// headers/trailers and "status" is the gRPC status code number.
+	Extract map[string]string `yaml:"extract"`
+
+	// ExpectCode lists the gRPC status names (OK, NOT_FOUND, ...) that count
+	// as success, replacing the OK-only default.
+	ExpectCode []string `yaml:"expect_code"`
+
+	// ExpectBody checks the response JSON with the same rule language as
+	// Extract; an empty expected value only requires the rule to evaluate.
+	ExpectBody map[string]string `yaml:"expect_body"`
+}
+
+// ParsedDuration parses Duration, returning 0 if unset.
+func (c GRPCCallConfig) ParsedDuration() (time.Duration, error) {
+	if c.Duration == "" {
+		return 0, nil
+	}
+	return time.ParseDuration(c.Duration)
+}
+
+// ParsedSendInterval parses SendInterval, returning 0 if unset.
+func (c GRPCCallConfig) ParsedSendInterval() (time.Duration, error) {
+	if c.SendInterval == "" {
+		return 0, nil
+	}
+	return time.ParseDuration(c.SendInterval)
+}
+
+// ResolveMessage returns the request message template source, reading
+// MessageFile if set.
+func (c GRPCCallConfig) ResolveMessage() (string, error) {
+	if c.MessageFile != "" {
+		b, err := os.ReadFile(c.MessageFile)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	}
+	return c.Message, nil
 }
 
 // ParsedTimeout parses WSConfig.Timeout, returning 0 if unset.

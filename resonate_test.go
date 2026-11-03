@@ -2,11 +2,17 @@ package resonate_test
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 
 	"github.com/jecklgamis/resonate"
 )
@@ -163,5 +169,74 @@ func TestWriteHTMLFile(t *testing.T) {
 func TestWriteHTMLFileInvalidPathErrors(t *testing.T) {
 	if err := resonate.WriteHTMLFile("/nonexistent/dir/report.html", resonate.HTMLReport{}); err == nil {
 		t.Fatal("expected an error for an unwritable path")
+	}
+}
+
+func TestGRPCGeneratorRunEndToEnd(t *testing.T) {
+	srv := grpc.NewServer()
+	hs := health.NewServer()
+	hs.SetServingStatus("up", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(srv, hs)
+	reflection.Register(srv)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(lis)
+	t.Cleanup(srv.Stop)
+
+	opts := resonate.DefaultGRPCOptions()
+	opts.Plaintext = true
+	gen, err := resonate.NewGRPCGenerator(resonate.GRPCTarget{
+		Address: lis.Addr().String(),
+		Calls: []resonate.GRPCCall{{
+			Method:     "grpc.health.v1.Health/Check",
+			Message:    `{"service":"up"}`,
+			ExpectBody: map[string]string{"json:status": "SERVING"},
+		}},
+	}, opts)
+	if err != nil {
+		t.Fatalf("NewGRPCGenerator error: %v", err)
+	}
+	defer gen.Close()
+
+	summary := resonate.Run(context.Background(), gen, resonate.Options{Requests: 10, Workers: 2})
+	if summary.Requests != 10 || summary.SuccessRate != 1 {
+		t.Errorf("summary = %d requests, %v success rate; want 10 and 1", summary.Requests, summary.SuccessRate)
+	}
+}
+
+func TestGRPCStreamingRunEndToEnd(t *testing.T) {
+	srv := grpc.NewServer()
+	hs := health.NewServer()
+	hs.SetServingStatus("up", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(srv, hs)
+	reflection.Register(srv)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(lis)
+	t.Cleanup(srv.Stop)
+
+	opts := resonate.DefaultGRPCOptions()
+	opts.Plaintext = true
+	gen, err := resonate.NewGRPCGenerator(resonate.GRPCTarget{
+		Address: lis.Addr().String(),
+		Calls: []resonate.GRPCCall{{
+			// Health/Watch is server-streaming: one result per received message.
+			Method:  "grpc.health.v1.Health/Watch",
+			Message: `{"service":"up"}`,
+			Receive: 1,
+		}},
+	}, opts)
+	if err != nil {
+		t.Fatalf("NewGRPCGenerator error: %v", err)
+	}
+	defer gen.Close()
+
+	summary := resonate.Run(context.Background(), gen, resonate.Options{Requests: 5, Workers: 2})
+	if summary.Requests != 5 || summary.SuccessRate != 1 {
+		t.Errorf("summary = %d requests, %v success rate; want 5 and 1", summary.Requests, summary.SuccessRate)
 	}
 }

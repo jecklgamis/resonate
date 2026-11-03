@@ -1,0 +1,45 @@
+# Unary gRPC: each iteration makes these calls in order over a shared
+# connection, stopping at the first failure. The schema comes from server
+# reflection unless proto_files or descriptor_set is given.
+#
+# Try it without a service of your own, using the example server (it implements
+# acme.user.v1.UserService and acme.feed.v1.Feed from examples/proto):
+#   make example-grpc-server      # or: go run ./examples/testgrpcserver
+#   resonate run examples/grpc-basic.yaml --dry-run
+protocol: grpc
+
+load:
+  duration: 30s
+  rate: 100
+  workers: 50
+
+grpc:
+  address: localhost:50051
+  plaintext: true          # no TLS; otherwise TLS (insecure / ca_file / cert_file / key_file)
+  timeout: 5s              # per-call deadline
+  connections: 2           # ~100 concurrent streams per connection is a common server cap
+
+  # Optional: use .proto sources instead of reflection. import_paths defaults
+  # to the directories containing proto_files.
+  # proto_files: [api/user.proto]
+  # import_paths: [api]
+  # Or a descriptor set: protoc --include_imports --descriptor_set_out=api.pb api/user.proto
+  # descriptor_set: api.pb
+
+  metadata:                # sent as gRPC headers on every call
+    authorization: Bearer {{.Identity.token}}
+  identities:
+    - token: abc123
+    - token: def456
+
+  calls:
+    - method: acme.user.v1.UserService/CreateUser
+      message: '{"name":"{{randChoice "alice" "bob" "carol"}}","age":{{randInt 18 65}}}'
+      extract:
+        user_id: json:id
+
+    - method: acme.user.v1.UserService/GetUser
+      message: '{"id":"{{.Vars.user_id}}"}'
+      expect_code: [OK]
+      expect_body:
+        json:name: ""      # just require the field to exist

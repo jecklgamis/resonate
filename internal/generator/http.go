@@ -127,6 +127,36 @@ func DefaultHTTPOptions() HTTPOptions {
 	}
 }
 
+// newTLSConfig builds the client-side TLS config shared by the HTTP and gRPC
+// generators: optional verification skipping, an extra CA bundle to trust,
+// and an optional client certificate (mTLS — cert and key must come as a pair).
+func newTLSConfig(insecure bool, caFile, certFile, keyFile string) (*tls.Config, error) {
+	tlsConfig := &tls.Config{InsecureSkipVerify: insecure}
+	if caFile != "" {
+		pem, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading ca file: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("no certificates found in ca file %q", caFile)
+		}
+		tlsConfig.RootCAs = pool
+	}
+	if certFile != "" || keyFile != "" {
+		if certFile == "" || keyFile == "" {
+			return nil, fmt.Errorf("both a cert and a key are required for client certificate authentication")
+		}
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	return tlsConfig, nil
+}
+
 func newHTTPClient(opts HTTPOptions) (*http.Client, error) {
 	if opts.H2C {
 		if opts.CertFile != "" || opts.KeyFile != "" || opts.CAFile != "" || opts.Insecure || opts.DisableKeepAlive {
@@ -146,27 +176,9 @@ func newHTTPClient(opts HTTPOptions) (*http.Client, error) {
 		return &http.Client{Transport: transport, Timeout: opts.Timeout}, nil
 	}
 
-	tlsConfig := &tls.Config{InsecureSkipVerify: opts.Insecure}
-	if opts.CAFile != "" {
-		pem, err := os.ReadFile(opts.CAFile)
-		if err != nil {
-			return nil, fmt.Errorf("reading ca file: %w", err)
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("no certificates found in ca file %q", opts.CAFile)
-		}
-		tlsConfig.RootCAs = pool
-	}
-	if opts.CertFile != "" || opts.KeyFile != "" {
-		if opts.CertFile == "" || opts.KeyFile == "" {
-			return nil, fmt.Errorf("both a cert and a key are required for client certificate authentication")
-		}
-		cert, err := tls.LoadX509KeyPair(opts.CertFile, opts.KeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("loading client certificate: %w", err)
-		}
-		tlsConfig.Certificates = []tls.Certificate{cert}
+	tlsConfig, err := newTLSConfig(opts.Insecure, opts.CAFile, opts.CertFile, opts.KeyFile)
+	if err != nil {
+		return nil, err
 	}
 
 	transport := &http.Transport{

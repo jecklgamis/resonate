@@ -84,6 +84,38 @@ func NewWSGenerator(target WSTarget, opts WSOptions) (*WSGenerator, error) {
 	return generator.NewWSGenerator(target, opts)
 }
 
+// --- gRPC: unary and streaming calls; schema from reflection, .proto files or a descriptor set ---
+
+// GRPCCall is one RPC: a "package.Service/Method" name, its request(s) as
+// protobuf JSON (templated) — Message for unary and server-streaming methods,
+// Messages for client-streaming and bidirectional ones — and optional
+// Receive/Duration bounds, metadata, extraction and checks. The method's
+// schema decides which kind it is.
+type GRPCCall = generator.GRPCCall
+
+// GRPCTarget describes one iteration against one server: an address plus the
+// calls made in order over a shared connection.
+type GRPCTarget = generator.GRPCTarget
+
+// GRPCOptions configures connections (TLS or plaintext, how many) and where
+// the schema comes from (ProtoFiles, DescriptorSet, or server reflection).
+type GRPCOptions = generator.GRPCOptions
+
+// GRPCGenerator makes gRPC calls, reporting one Result per unary call and one
+// per received message of a streaming call.
+type GRPCGenerator = generator.GRPCGenerator
+
+// DefaultGRPCOptions returns GRPCOptions with resonate's usual defaults (30s
+// per-call timeout, one connection, TLS on).
+func DefaultGRPCOptions() GRPCOptions { return generator.DefaultGRPCOptions() }
+
+// NewGRPCGenerator builds a Generator that makes target's calls, in order,
+// every iteration. It resolves the schema (which may mean a reflection round
+// trip to the server) before returning.
+func NewGRPCGenerator(target GRPCTarget, opts GRPCOptions) (*GRPCGenerator, error) {
+	return generator.NewGRPCGenerator(target, opts)
+}
+
 // --- Feeders: CSV/JSON-driven request data ---
 
 // Feeder cycles or randomly samples rows of string-keyed data loaded once

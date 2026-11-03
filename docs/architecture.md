@@ -15,11 +15,14 @@ four report formats (see [Reports](reports.md)).
   embedding the engine in your own program. `dsl.go`'s `Scenario` is the
   exception — a fluent builder with its own state (current
   request/message, a control-flow block stack) layered on top, covering
-  HTTP targets, flows, and WebSocket. See [Library](library.md) and
-  `examples/dsl-examples`.
+  HTTP targets, flows, and WebSocket (not gRPC, which is used through its
+  struct API). See [Library](library.md) and `examples/dsl-examples`.
 - **`internal/generator`** — protocol-agnostic `Generator` interface plus
   `HTTPGenerator` (independent requests), `FlowGenerator` (multi-step,
-  response chaining, per-worker identities), and `WSGenerator` (WebSocket).
+  response chaining, per-worker identities), `WSGenerator` (WebSocket),
+  and `GRPCGenerator` (gRPC: unary and server-/client-/bidirectional-
+  streaming, with the schema from reflection, `.proto` files or a
+  descriptor set).
 - **`internal/tmpl`** — per-request templating (`{{ }}`) for URLs, query
   params, headers, bodies. See [Request Templating](usage.md#request-templating).
 - **`internal/engine`** — worker pool + rate limiter driving a
@@ -34,6 +37,11 @@ four report formats (see [Reports](reports.md)).
 - **`internal/cli`** — Cobra commands (`hit`, `run`).
 - **`cmd/gendocs`** — regenerates the [CLI Reference](cli/resonate.md)
   from the cobra command tree.
+- **`examples/`** — runnable scenarios, plus `examples/testgrpcserver`, a demo
+  gRPC server (`make example-grpc-server`) implementing the services the gRPC
+  examples call, with the schemas in `examples/proto`; it access-logs every
+  call it receives. See
+  [the gRPC guide](grpc.md#the-example-server).
 
 For the deeper design rationale (why `runStaged` doesn't use
 `rate.Limiter.SetLimitAt`, the validation philosophy, per-package

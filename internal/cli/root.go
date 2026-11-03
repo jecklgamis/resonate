@@ -8,8 +8,8 @@ import (
 func NewRootCommand(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "resonate",
-		Short: "Load test HTTP and WebSocket services",
-		Long: "resonate drives configurable load against HTTP and WebSocket targets.\n\n" +
+		Short: "Load test HTTP, WebSocket and gRPC services",
+		Long: "resonate drives configurable load against HTTP, WebSocket and gRPC targets.\n\n" +
 			"Quick start:\n" +
 			"  resonate hit https://example.com --duration 2s\n" +
 			"  resonate run scenario.yaml",

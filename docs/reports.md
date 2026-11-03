@@ -11,6 +11,19 @@ Printed after every run: requests/rate, success ratio, latency
 percentiles, status codes, errors. Pass `--json` to print the same data as
 JSON instead of text — handy for piping into `jq` or another tool.
 
+### What counts as a request
+
+For HTTP, one request is one HTTP call. The other protocols report in finer
+grain, so `requests` — and the rate derived from it — can exceed the number
+of iterations:
+
+- **WebSocket:** one result for the connect plus one per message.
+- **gRPC:** one result per unary call, and for a streaming call one result
+  per *received* message (see [gRPC](grpc.md#what-a-stream-reports)), so a stream
+  delivering 5 messages adds 5 requests. gRPC statuses show in the status
+  breakdown as their HTTP equivalents (`OK` 200, `NOT_FOUND` 404,
+  `UNAVAILABLE` 503, ...); the error breakdown keeps the real gRPC code.
+
 ## HTML Report
 
 `report.html`, written to the current directory by default. A single

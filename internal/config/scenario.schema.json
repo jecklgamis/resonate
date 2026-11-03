@@ -8,7 +8,7 @@
   "properties": {
     "protocol": {
       "type": "string",
-      "enum": ["http", "ws"],
+      "enum": ["http", "ws", "grpc"],
       "default": "http",
       "description": "Scenario protocol. Defaults to HTTP."
     },
@@ -20,6 +20,9 @@
     },
     "ws": {
       "$ref": "#/$defs/websocket"
+    },
+    "grpc": {
+      "$ref": "#/$defs/grpc"
     },
     "assertions": {
       "type": "array",
@@ -42,13 +45,50 @@
       "then": {
         "required": ["ws"],
         "not": {
-          "required": ["http"]
+          "anyOf": [
+            {
+              "required": ["http"]
+            },
+            {
+              "required": ["grpc"]
+            }
+          ]
         }
       },
       "else": {
-        "required": ["http"],
-        "not": {
-          "required": ["ws"]
+        "if": {
+          "properties": {
+            "protocol": {
+              "const": "grpc"
+            }
+          },
+          "required": ["protocol"]
+        },
+        "then": {
+          "required": ["grpc"],
+          "not": {
+            "anyOf": [
+              {
+                "required": ["http"]
+              },
+              {
+                "required": ["ws"]
+              }
+            ]
+          }
+        },
+        "else": {
+          "required": ["http"],
+          "not": {
+            "anyOf": [
+              {
+                "required": ["ws"]
+              },
+              {
+                "required": ["grpc"]
+              }
+            ]
+          }
         }
       }
     }
@@ -498,6 +538,145 @@
         }
       },
       "required": ["url", "messages"]
+    },
+    "grpc": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "gRPC calls (unary and streaming), made in order each iteration over a shared connection; the iteration stops at the first failed call. The schema comes from proto_files, else descriptor_set, else server reflection.",
+      "properties": {
+        "address": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Server address, host:port."
+        },
+        "plaintext": {
+          "type": "boolean",
+          "description": "Connect without TLS. Mutually exclusive with insecure, ca_file, cert_file and key_file."
+        },
+        "insecure": {
+          "type": "boolean",
+          "description": "Skip TLS certificate verification."
+        },
+        "ca_file": {
+          "type": "string"
+        },
+        "cert_file": {
+          "type": "string"
+        },
+        "key_file": {
+          "type": "string"
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "connections": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Spread virtual users over this many gRPC connections (default 1). A server typically allows ~100 concurrent streams per connection; raise this at high concurrency."
+        },
+        "proto_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": ".proto sources to compile. Mutually exclusive with descriptor_set."
+        },
+        "import_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Roots that proto_files and their imports resolve against; defaults to the directories containing proto_files."
+        },
+        "descriptor_set": {
+          "type": "string",
+          "description": "A FileDescriptorSet file from protoc --descriptor_set_out=FILE --include_imports. Mutually exclusive with proto_files."
+        },
+        "metadata": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "calls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/grpcCall"
+          }
+        }
+      },
+      "required": ["address", "calls"]
+    },
+    "grpcCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "type": "string",
+          "pattern": "^/?[^/\\s]+/[^/\\s]+$",
+          "description": "package.Service/Method."
+        },
+        "message": {
+          "type": "string",
+          "description": "Request as protobuf JSON; supports templates. Empty means the empty message."
+        },
+        "message_file": {
+          "type": "string",
+          "description": "Path to a request message file; its contents are templated. Takes priority over message."
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Requests of a client-streaming or bidirectional call, sent in order; each supports templates and is rendered as it is sent."
+        },
+        "repeat": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many times to send the messages list (default 1)."
+        },
+        "send_interval": {
+          "$ref": "#/$defs/duration"
+        },
+        "receive": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "For server-streaming and bidirectional calls: end successfully after this many responses. The server closing the stream first is a failure."
+        },
+        "duration": {
+          "$ref": "#/$defs/duration"
+        },
+        "metadata": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "extract": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "expect_code": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "OK", "CANCELLED", "CANCELED", "UNKNOWN", "INVALID_ARGUMENT", "DEADLINE_EXCEEDED",
+              "NOT_FOUND", "ALREADY_EXISTS", "PERMISSION_DENIED", "RESOURCE_EXHAUSTED",
+              "FAILED_PRECONDITION", "ABORTED", "OUT_OF_RANGE", "UNIMPLEMENTED", "INTERNAL",
+              "UNAVAILABLE", "DATA_LOSS", "UNAUTHENTICATED"
+            ]
+          },
+          "description": "gRPC status names that count as success; replaces the OK-only default."
+        },
+        "expect_body": {
+          "$ref": "#/$defs/stringMap"
+        }
+      },
+      "required": ["method"]
     },
     "wsMessage": {
       "type": "object",

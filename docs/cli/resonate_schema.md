@@ -18,5 +18,5 @@ resonate schema [flags]
 
 ### SEE ALSO
 
-* [resonate](resonate.md)	 - Load test HTTP and WebSocket services
+* [resonate](resonate.md)	 - Load test HTTP, WebSocket and gRPC services
 

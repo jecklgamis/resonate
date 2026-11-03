@@ -487,3 +487,96 @@ http:
 		t.Errorf("Stages[1] = %+v, want zero workers/rate (ramp-down)", s.Load.Stages[1])
 	}
 }
+
+func TestLoadGRPCScenario(t *testing.T) {
+	msgFile := writeTempFile(t, "msg.json", `{"id":"{{.Seq}}"}`)
+	path := writeTempFile(t, "scenario.yaml", `
+protocol: grpc
+
+load:
+  duration: 10s
+  workers: 5
+
+grpc:
+  address: localhost:50051
+  plaintext: true
+  timeout: 2s
+  connections: 4
+  proto_files: [api/user.proto]
+  import_paths: [api]
+  metadata:
+    authorization: Bearer {{.Identity.token}}
+  identities:
+    - token: a
+  calls:
+    - method: acme.user.v1.UserService/GetUser
+      message_file: `+msgFile+`
+      extract:
+        name: json:name
+      expect_code: [OK, NOT_FOUND]
+      expect_body:
+        json:id: ""
+`)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	g := s.GRPC
+	if s.Protocol != "grpc" || g.Address != "localhost:50051" || !g.Plaintext || g.Connections != 4 {
+		t.Errorf("unexpected grpc config: %+v", g)
+	}
+	if len(g.ProtoFiles) != 1 || len(g.ImportPaths) != 1 || len(g.Identities) != 1 || len(g.Calls) != 1 {
+		t.Errorf("lists not parsed: %+v", g)
+	}
+	c := g.Calls[0]
+	if c.Method != "acme.user.v1.UserService/GetUser" || len(c.ExpectCode) != 2 || c.Extract["name"] != "json:name" {
+		t.Errorf("unexpected call: %+v", c)
+	}
+	if msg, err := c.ResolveMessage(); err != nil || msg != `{"id":"{{.Seq}}"}` {
+		t.Errorf("ResolveMessage = %q, %v", msg, err)
+	}
+	if msg, err := (GRPCCallConfig{Message: "inline"}).ResolveMessage(); err != nil || msg != "inline" {
+		t.Errorf("inline ResolveMessage = %q, %v", msg, err)
+	}
+	if _, err := (GRPCCallConfig{MessageFile: "/nonexistent"}).ResolveMessage(); err == nil {
+		t.Error("expected an error for a missing message_file")
+	}
+}
+
+func TestLoadGRPCStreamingCallFields(t *testing.T) {
+	path := writeTempFile(t, "scenario.yaml", `
+protocol: grpc
+load:
+  duration: 5s
+grpc:
+  address: localhost:50051
+  plaintext: true
+  calls:
+    - method: pkg.Svc/Chat
+      messages: ['{"text":"a"}', '{"text":"b"}']
+      repeat: 3
+      send_interval: 20ms
+      receive: 5
+      duration: 10s
+`)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	c := s.GRPC.Calls[0]
+	if len(c.Messages) != 2 || c.Repeat != 3 || c.Receive != 5 {
+		t.Errorf("streaming fields not parsed: %+v", c)
+	}
+	if d, err := c.ParsedDuration(); err != nil || d != 10*time.Second {
+		t.Errorf("ParsedDuration = %v, %v; want 10s", d, err)
+	}
+	if d, err := c.ParsedSendInterval(); err != nil || d != 20*time.Millisecond {
+		t.Errorf("ParsedSendInterval = %v, %v; want 20ms", d, err)
+	}
+	if d, err := (GRPCCallConfig{}).ParsedDuration(); err != nil || d != 0 {
+		t.Errorf("unset ParsedDuration = %v, %v; want 0", d, err)
+	}
+	if _, err := (GRPCCallConfig{SendInterval: "soon"}).ParsedSendInterval(); err == nil {
+		t.Error("expected an error for an unparseable send_interval")
+	}
+}

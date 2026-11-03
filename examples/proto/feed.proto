@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package acme.feed.v1;
+
+// Feed shows all three streaming shapes, for examples/grpc-streaming.yaml.
+service Feed {
+  // Server streaming: events for a topic, until the client stops listening.
+  rpc Subscribe(SubscribeRequest) returns (stream Event);
+
+  // Client streaming: a sequence of items in, one summary out.
+  rpc Upload(stream UploadItem) returns (UploadSummary);
+
+  // Bidirectional streaming: every message is answered, and when the client
+  // is done sending, the server says goodbye.
+  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+}
+
+message SubscribeRequest {
+  string topic = 1;
+}
+
+message Event {
+  string topic = 1;
+  int64 id = 2;
+  string payload = 3;
+}
+
+message UploadItem {
+  string id = 1;
+  string payload = 2;
+}
+
+message UploadSummary {
+  int32 accepted = 1;
+  int64 total_bytes = 2;
+}
+
+message ChatMessage {
+  string text = 1;
+}

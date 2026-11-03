@@ -2,7 +2,8 @@
 
 Scenario files (`resonate run <scenario.yaml>`) describe multi-target or
 reusable load tests in YAML. This page covers `http.targets`/`http.flow`,
-base URLs, feeders, identities, control flow, WebSocket, and assertions —
+base URLs, feeders, identities, control flow, WebSocket, gRPC, and
+assertions —
 see [Execution Models](execution-models.md) for the `load:` block
 (`rate`, `workers`, `stages`, `iterations`).
 
@@ -55,8 +56,8 @@ http:
 A `url` that doesn't start with `/` (already absolute, or a `{{ }}`
 template) is left untouched; a relative `url` with no `base_url` set
 fails fast at construction, same as a malformed absolute URL. Only
-`targets`/`flow`/`setup` resolve against `base_url` — `ws` scenarios
-don't. See
+`targets`/`flow`/`setup` resolve against `base_url` — `ws` and `grpc`
+scenarios don't. See
 [`examples/http-base-url.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-base-url.yaml).
 
 ## Feeders
@@ -232,6 +233,37 @@ dial, message sequence, and close. `binary: true` on a message sends it
 as a binary frame instead of text.
 
 See [`examples/ws-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/ws-basic.yaml).
+
+## gRPC
+
+`protocol: grpc` (scenario files only) makes gRPC calls — unary, and
+server-, client- and bidirectional-streaming. Each iteration runs
+`grpc.calls` in order over a shared connection and stops at the first failed
+call, so a login-then-use flow chains with `extract` like HTTP flows and
+WebSocket messages do. The schema comes from server reflection, `.proto`
+files or a descriptor set.
+
+```yaml
+protocol: grpc
+
+load:
+  duration: 30s
+  rate: 100
+  workers: 50
+
+grpc:
+  address: localhost:50051
+  plaintext: true
+  calls:
+    - method: acme.user.v1.UserService/GetUser
+      message: '{"id":"{{randInt 1 1000}}"}'
+      expect_code: [OK, NOT_FOUND]
+```
+
+Everything else — connecting and TLS, the schema sources, messages and
+templating, metadata and auth, response checks, streaming, how results are
+reported, tuning, troubleshooting, and a runnable example server — is in the
+**[gRPC guide](grpc.md)**.
 
 ## Assertions
 

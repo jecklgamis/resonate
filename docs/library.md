@@ -170,9 +170,10 @@ if err := resonate.WriteHTMLFile("report.html", summary.HTMLReport()); err != ni
 struct-literal API it's built on is still available for cases that want
 more control (e.g. building a `Generator` once and driving it with your
 own retry loop) — `resonate.NewHTTPGenerator`, `resonate.NewFlowGenerator`,
-`resonate.NewWSGenerator`, `resonate.Feeder`, `resonate.Run`,
-`resonate.Summary`, `resonate.Assertion`/`Evaluate` cover the same
-ground as `resonate hit`/`resonate run`, as Go APIs instead of flags/YAML:
+`resonate.NewWSGenerator`, `resonate.NewGRPCGenerator`, `resonate.Feeder`,
+`resonate.Run`, `resonate.Summary`, `resonate.Assertion`/`Evaluate` cover
+the same ground as `resonate hit`/`resonate run`, as Go APIs instead of
+flags/YAML:
 
 ```go
 gen, err := resonate.NewHTTPGenerator(
@@ -190,7 +191,54 @@ summary.Print(os.Stdout)
 
 See [`resonate_test.go`](https://github.com/jecklgamis/resonate/blob/main/resonate_test.go)
 for worked examples (a plain HTTP run, a multi-step flow, assertions, a
-feeder) written using only this public package.
+feeder, gRPC unary and streaming) written using only this public package.
+
+### gRPC
+
+gRPC is available through the struct API only — the fluent `Scenario`
+builder has no gRPC methods. A `GRPCTarget` is a server address plus the
+`GRPCCall`s made, in order, every iteration; the same fields as the
+[`grpc:` scenario block](grpc.md) apply, so see that page for
+what each means.
+
+```go
+opts := resonate.DefaultGRPCOptions()
+opts.Plaintext = true // no TLS; or set Insecure / CAFile / CertFile / KeyFile
+// opts.ProtoFiles = []string{"api/user.proto"} // otherwise: server reflection
+
+gen, err := resonate.NewGRPCGenerator(resonate.GRPCTarget{
+	Address: "localhost:50051",
+	Calls: []resonate.GRPCCall{
+		{ // unary: Message is the request, as protobuf JSON (templated)
+			Method:  "acme.user.v1.UserService/CreateUser",
+			Message: `{"name":"alice","age":{{randInt 18 65}}}`,
+			Extract: map[string]string{"id": "json:id"},
+		},
+		{ // server streaming: stop after 5 messages
+			Method:     "acme.feed.v1.Feed/Subscribe",
+			Message:    `{"topic":"orders"}`,
+			Receive:    5,
+			ExpectBody: map[string]string{"json:topic": "orders"},
+		},
+		{ // client streaming: Messages are sent in order, Repeat times
+			Method:   "acme.feed.v1.Feed/Upload",
+			Messages: []string{`{"id":"{{uuid}}","payload":"x"}`},
+			Repeat:   10,
+		},
+	},
+}, opts)
+if err != nil {
+	log.Fatal(err) // includes a bad method name, a field that doesn't suit the call's kind, ...
+}
+defer gen.Close()
+
+summary := resonate.Run(ctx, gen, resonate.Options{Rate: 50, Workers: 20, Duration: 30 * time.Second})
+```
+
+`NewGRPCGenerator` resolves the schema before it returns, which with server
+reflection means a round trip to the server (so an unreachable server is an
+error here, not a failed first request). A unary call is one `Result`; a
+streaming call is one `Result` per received message.
 
 ## Examples project
 

@@ -5,7 +5,7 @@
 | | `resonate hit <url>` (CLI) | `resonate run <scenario.yaml>` (YAML) |
 | --- | --- | --- |
 | Input | CLI flags | YAML scenario file |
-| Protocol | HTTP only | HTTP or WebSocket (`protocol: ws`) |
+| Protocol | HTTP only | HTTP, WebSocket (`protocol: ws`) or gRPC (`protocol: grpc`) |
 | Targets | One URL | Multiple targets (round-robin), or a multi-step `flow` |
 | State across requests | None | `flow` supports response chaining (`{{.Vars.*}}`) and per-VU `identities` |
 | Setup steps | Not available | `http.setup` — runs once per VU before its first iteration |
@@ -47,7 +47,7 @@ a file instead of `-d` — the latter skips templating, so it's also the
 safe choice for a body containing literal `{{ }}`.
 
 `resonate hit` is HTTP-only, flag-driven, single-target. For WebSocket,
-multi-target, multi-step flows, or anything reusable, use `resonate run`
+gRPC, multi-target, multi-step flows, or anything reusable, use `resonate run`
 instead. See the [CLI Reference](cli/resonate_hit.md) for every flag.
 
 ## `resonate run` — Scenario Files
@@ -86,6 +86,11 @@ resonate run scenario.yaml --json
 See [`examples/http-basic.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-basic.yaml),
 [Scenarios](scenarios.md) for the full YAML schema, and the
 [CLI Reference](cli/resonate_run.md) for `resonate run`'s own flags.
+
+`protocol:` selects what the scenario drives: `http` (the default),
+`ws` ([WebSocket](scenarios.md#websocket)) or `grpc` (the
+[gRPC guide](grpc.md)). The `load:` block and `assertions:` are the same for all
+three.
 
 ## Request Templating
 
@@ -220,9 +225,21 @@ Both commands fail fast, before any request is sent, on:
 - An `expect_status`/`--expect-status` code outside 100-599, a blank
   `expect_headers`/`--expect-header` name, or an `expect_body`/
   `--expect-body` rule with an unrecognized prefix.
+- For `protocol: grpc`: a missing `address` or `calls`; a `method` that
+  isn't `package.Service/Method`, or isn't in the schema (the error lists
+  the methods the service does have); a request message that doesn't parse
+  as the method's request type (when it has no `{{ }}`); a field that
+  doesn't suit the method's kind (`receive` on a unary call, `message` on a
+  client-streaming one, ...); an unknown `expect_code` name; negative
+  `receive`/`repeat`/`duration`/`send_interval`; `proto_files` together
+  with `descriptor_set`; `plaintext` together with a TLS option; and a
+  server that can't supply the schema (unreachable, or reflection off with
+  no `proto_files`/`descriptor_set` given — the one check that touches the
+  network). See the [gRPC guide](grpc.md).
 
 Three things warn instead, since there's a sane fallback: `--body` and
-`--body-file` both set (the file wins); `--raw-body-file` set alongside
+`--body-file` both set (the file wins) — likewise a gRPC call's `message`
+and `message_file`; `--raw-body-file` set alongside
 either (the raw file wins); and a run whose achieved rate fell short
 because of insufficient `--workers` (see
 [Execution Models](execution-models.md)).

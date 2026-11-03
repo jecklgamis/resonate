@@ -1,0 +1,53 @@
+# Load test for the key-value store in https://github.com/jecklgamis/go-grpc-example
+# (service kvstore.KeyValueStore: Put(KeyValue) -> Empty, Get(Key) -> Value).
+#
+# Needs go-grpc-example at commit c6a20ea ("Guard in-memory store with
+# RWMutex") or later. Earlier versions kept the store in an unlocked map, so
+# any concurrent load killed the server within about a second with
+# "fatal error: concurrent map read and map write".
+#
+# 1. Build the server from current source, so you don't run a stale binary
+#    that predates that fix (in the go-grpc-example directory):
+#        make server
+#
+# 2. Run it. It logs every request, which dominates at high rates, so silence
+#    it for a performance run (and note the client shares your CPUs):
+#        bin/server -port 4000 2>/dev/null
+#
+# 3. Check one iteration, then run the whole thing:
+#        resonate run examples/grpc-kvstore.yaml --dry-run
+#        resonate run examples/grpc-kvstore.yaml
+#
+# Reflection is on in that server, so no .proto file is needed. Each iteration
+# is two requests (a Put, then a Get of the same key), so the report's request
+# rate is about twice the iteration rate set below.
+protocol: grpc
+
+load:
+  # Stages ramp linearly from the previous stage's end values (0 to start), so
+  # repeat a value to hold it. Raise `rate` across runs to find the limit.
+  stages:
+    - { duration: 5s,  workers: 50, rate: 1000 }   # ramp up 0 -> 1000 iterations/s
+    - { duration: 15s, workers: 50, rate: 1000 }   # hold
+    - { duration: 5s,  workers: 0,  rate: 0 }      # ramp down
+
+grpc:
+  address: localhost:4000
+  plaintext: true          # the server speaks no TLS
+  timeout: 5s
+  calls:
+    - method: kvstore.KeyValueStore/Put
+      # {{.Seq}} is constant within an iteration, so the Get below reads back
+      # the key this Put just wrote. Keys accumulate in the server's memory.
+      message: '{"key":"perf-{{.Seq}}","value":"{{uuid}}"}'
+    - method: kvstore.KeyValueStore/Get
+      message: '{"key":"perf-{{.Seq}}"}'
+      expect_body:
+        json:value: ""     # the value must be present (expected values are literal)
+
+# A failed assertion makes `resonate run` exit non-zero, for CI gating.
+assertions:
+  - metric: success_rate
+    min: "0.999"
+  - metric: latency_p99
+    max: 100ms
