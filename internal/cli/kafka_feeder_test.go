@@ -126,6 +126,8 @@ func TestKafkaFeederGuideAndExampleAreValidAndRun(t *testing.T) {
 		}
 	}
 
+	t.Chdir(t.TempDir()) // runs write report files to the working directory
+
 	addr := kafkaWithMessages(t, "users", `{"email":"a@example.com","password":"x","id":"1"}`, `{"email":"b@example.com","password":"y","id":"2"}`)
 	var mu sync.Mutex
 	var seen []string
