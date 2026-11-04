@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -343,5 +344,52 @@ func TestStreamFeederOpenWithRetryReturnsNilWhenStopped(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("openWithRetry did not return after stop was closed")
+	}
+}
+
+// A malformed row anywhere in the file must fail at construction. Stream mode used
+// to check only the header and first row, then read a bad row later on as the end
+// of the file, so the run silently restarted the file and never used the rest.
+func TestNewFeederStreamRejectsMalformedRowAnywhere(t *testing.T) {
+	cases := map[string]struct{ name, content, wantRow string }{
+		"csv ragged row":   {"u.csv", "a,b\n1,2\n3\n5,6\n", "row 2"},
+		"csv bad last row": {"u.csv", "a,b\n1,2\n3,4\n5\n", "row 3"},
+		"json bad element": {"u.json", `[{"a":1},{"a":2},"oops",{"a":4}]`, "row 3"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := writeTempDataFile(t, tc.name, tc.content)
+			f, err := NewFeeder(path, "stream")
+			if err == nil {
+				f.Close()
+				t.Fatal("expected a construction error for a malformed row")
+			}
+			if !strings.Contains(err.Error(), tc.wantRow) {
+				t.Errorf("error = %v, want it to name %s", err, tc.wantRow)
+			}
+		})
+	}
+}
+
+// Every row of a valid file is served, in order, so validating up front must not
+// consume or skip anything.
+func TestNewFeederStreamServesEveryRowAfterValidation(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("n\n")
+	for i := 0; i < 2500; i++ { // more than the read-ahead buffer
+		fmt.Fprintf(&b, "%d\n", i)
+	}
+	f, err := NewFeeder(writeTempDataFile(t, "big.csv", b.String()), "stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for i := 0; i < 2500; i++ {
+		if got := f.Next()["n"]; got != strconv.Itoa(i) {
+			t.Fatalf("row %d = %q", i, got)
+		}
+	}
+	if got := f.Next()["n"]; got != "0" {
+		t.Errorf("after the last row got %q, want it to wrap to 0", got)
 	}
 }

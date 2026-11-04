@@ -104,19 +104,23 @@ Each top-level field is a column. Values become text the way you'd expect:
   some rows repeat and others never appear. Also loaded into memory.
 - **`stream`**. Behaves like `sequential` but reads the file as the test runs, keeping only 1000
   rows in memory whatever the file's size. At the end of the file it reopens it and starts again.
+  It checks the whole file once when the run starts.
   There is no streaming `random`.
 
 ### How big a file can be
 
 `sequential` and `random` hold the file as a table of text, which costs far more than the file's
-size. Measured on a 36 MB CSV of 2 million rows, a run used about 40 times the file size in memory.
-At that ratio a 100 MB file would need roughly 4 GB, so keep `sequential` and `random` files to
-tens of MB and use `mode: stream` or [Kafka](#kafka) for anything bigger.
+size, and the ratio depends on the rows: many short rows cost the most. Measured: a 36 MB CSV of
+2 million narrow rows used about 40 times its size in memory, and an 83 MB CSV of 2 million rows with
+three columns used about 11 times (934 MB). So expect roughly 10 to 40 times, and keep `sequential`
+and `random` files to tens of MB. Use `mode: stream` or [Kafka](#kafka) for anything bigger: that
+83 MB file ran in `stream` mode with 30 MB of memory.
 
-`stream` has one limitation. It checks the header and the first row when the run starts, but not
-the rest. A malformed row later in the file (a CSV row with the wrong number of fields, or invalid
-JSON) is treated as the end of the file, so the run starts the file over from the top and **the rows
-after the bad one are never used**. Validate large files before using them.
+`stream` reads the whole file once when the run starts, one row at a time, to check it. A malformed
+row anywhere in the file (a CSV row with the wrong number of fields, invalid JSON) is reported with
+its row number before any request is sent, instead of being mistaken for the end of the file. That
+scan takes time in proportion to the file: the whole run on the 83 MB file, scan included, took under
+a second on a laptop. After it, the file is read again in the background as the test runs.
 
 ### What is checked before the run
 
@@ -126,7 +130,7 @@ A feeder that can't work fails before any request is sent:
 | --- | --- |
 | `unsupported file extension ... (want .csv or .json)` | Only those two formats are read |
 | `no such file or directory` | The path is wrong. A relative path is relative to where you run `resonate` |
-| `record on line N: wrong number of fields` | A CSV row doesn't match the header (`sequential` and `random`) |
+| `record on line N: wrong number of fields` | A CSV row doesn't match the header (`sequential` and `random`); `stream` says `row N` instead |
 | `"x.csv" has no data rows` | The file is empty or has only a header |
 | `must be a JSON array of objects` | The JSON is an object, or an array of something else |
 | `invalid mode "x" (want "sequential", "random", or "stream")` | A typo in `mode` |
@@ -297,6 +301,6 @@ feeder goes through the options structs above. See [Library](library.md).
 | Every request has an empty value | The column name doesn't match the header or JSON key; names are case-sensitive |
 | Rows repeat sooner than expected | The dataset is smaller than `rate × duration`; it wraps around. `random` also repeats, by design |
 | Out of memory, or the machine slows | A large file in `sequential` or `random` mode; use `stream` or Kafka |
-| `stream` mode ignores the end of my file | A malformed row ended the pass early; validate the file |
+| `stream` mode is slow to start | It scans the whole file once to validate it; a multi-GB file takes a while |
 | A JSON field shows up as `{"x":1}` | Nested values are exposed as raw JSON text; flatten the data if you need parts of it |
 | A relative `file:` path isn't found | It is resolved from the directory you run `resonate` in |

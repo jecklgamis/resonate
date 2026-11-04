@@ -229,19 +229,33 @@ type streamFeeder struct {
 }
 
 // newStreamFeeder validates path/format the same way NewFeeder's other
-// modes do — opens it, confirms the header/array-start parses, and reads
-// one row to confirm the dataset isn't empty — all before starting the
-// background reader, so a bad file fails fast at construction. The
-// validating read is done with its own rowSource, immediately closed; the
-// background goroutine opens its own from scratch.
+// modes do: it reads the whole file once, row by row, before starting the
+// background reader — so a malformed row anywhere in it (a CSV row with the
+// wrong number of fields, invalid JSON) fails fast at construction instead
+// of being mistaken for the end of the file mid-run and silently shortening
+// the dataset. Memory stays bounded (one row at a time); the cost is one
+// extra pass over the file at startup. The validating read uses its own
+// rowSource, closed afterwards; the background goroutine opens its own from
+// scratch.
 func newStreamFeeder(path, format string) (*streamFeeder, error) {
 	src, err := openRowSource(path, format)
 	if err != nil {
 		return nil, err
 	}
-	_, err = src.next()
+	rows := 0
+	for {
+		_, err := src.next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			src.close()
+			return nil, fmt.Errorf("feeder: %q row %d: %w", path, rows+1, err)
+		}
+		rows++
+	}
 	src.close()
-	if err != nil {
+	if rows == 0 {
 		return nil, fmt.Errorf("feeder: %q has no data rows", path)
 	}
 
