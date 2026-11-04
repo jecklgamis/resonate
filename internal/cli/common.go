@@ -29,10 +29,11 @@ type runOpts struct {
 	Quiet       bool // suppress the periodic progress line on stderr
 	DryRun      bool // send exactly one real iteration (vuID 0) and print its results instead of running the full load
 	Assertions  []report.Assertion
-	HTMLReport  string // path to write a self-contained HTML report to; "" disables it. Defaults to "report.html" (see hit.go/run.go flag defaults).
-	JSONReport  string // path to write the JSON summary to; "" disables it. Defaults to "report.json" — independent of JSON, which controls the *stdout* format.
-	ResultsFile string // path to write one JSON object per individual generator.Result (JSON Lines), as they complete; "" disables it. Defaults to "results.jsonl" (see hit.go/run.go flag defaults) — same on-by-default convention as HTMLReport/JSONReport, though it's a raw per-request dump rather than a summary and can get large on a high-volume run.
-	Title       string // report title (e.g. the target URL or scenario file name)
+	HTMLReport  string           // path to write a self-contained HTML report to; "" disables it. Defaults to "report.html" (see hit.go/run.go flag defaults).
+	JSONReport  string           // path to write the JSON summary to; "" disables it. Defaults to "report.json" — independent of JSON, which controls the *stdout* format.
+	ResultsFile string           // path to write one JSON object per individual generator.Result (JSON Lines), as they complete; "" disables it. Defaults to "results.jsonl" (see hit.go/run.go flag defaults) — same on-by-default convention as HTMLReport/JSONReport, though it's a raw per-request dump rather than a summary and can get large on a high-volume run.
+	Settings    []report.Setting // what was tested and how the client was tuned (see runinfo.go), shown in the HTML report's Run settings table
+	Title       string           // report title (e.g. the target URL or scenario file name)
 }
 
 // runAndReport executes the engine against a and writes the final report in
@@ -78,7 +79,9 @@ func runAndReport(a generator.Generator, opts engine.Options, out runOpts) error
 		}
 	}
 
+	started := time.Now()
 	summary := engine.Run(ctx, a, opts)
+	finished := time.Now()
 
 	// All OnResult calls already happened synchronously inside engine.Run
 	// (see its doc comment), so the file is fully written by now — close it
@@ -108,7 +111,7 @@ func runAndReport(a generator.Generator, opts engine.Options, out runOpts) error
 	}
 
 	if out.HTMLReport != "" {
-		if err := writeHTMLReport(out.HTMLReport, out.Title, summary, out.Assertions, failures, runSettings(opts)); err != nil {
+		if err := writeHTMLReport(out.HTMLReport, out.Title, summary, out.Assertions, failures, reportSettings(out.Settings, opts, started, finished)); err != nil {
 			return fmt.Errorf("writing html report: %w", err)
 		}
 	}
@@ -211,6 +214,19 @@ func writeHTMLReport(path, title string, summary report.Summary, assertions []re
 		Failures:   failures,
 		Settings:   settings,
 	})
+}
+
+// reportSettings assembles the HTML report's Run settings: what was tested
+// (from the caller), the load shape, then which build ran it and when.
+func reportSettings(what []report.Setting, opts engine.Options, started, finished time.Time) []report.Setting {
+	rows := append([]report.Setting{}, what...)
+	rows = append(rows, runSettings(opts)...)
+	rows = append(rows, environmentSettings()...)
+	const layout = "2006-01-02 15:04:05 MST"
+	rows = append(rows,
+		report.Setting{Name: "Started", Value: started.Format(layout)},
+		report.Setting{Name: "Finished", Value: finished.Format(layout)})
+	return rows
 }
 
 // runSettings lists the load shape a run was given, for the HTML report's "Run

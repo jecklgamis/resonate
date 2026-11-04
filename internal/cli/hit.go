@@ -144,7 +144,7 @@ func newHitCommand() *cobra.Command {
 			if err := engine.Validate(opts); err != nil {
 				return err
 			}
-			return runAndReport(a, opts, runOpts{JSON: jsonOut, Quiet: quiet, DryRun: dryRun, Assertions: assertions, HTMLReport: htmlReport, JSONReport: jsonReport, ResultsFile: resultsFile, Title: url})
+			return runAndReport(a, opts, runOpts{JSON: jsonOut, Quiet: quiet, DryRun: dryRun, Assertions: assertions, Settings: hitSettings(url, timeout, maxIdleConns, maxRespBody, http3, h2c, insecure, certFile, caFile, noKeepalive, noRedir), HTMLReport: htmlReport, JSONReport: jsonReport, ResultsFile: resultsFile, Title: safeURL(url)})
 		},
 	}
 

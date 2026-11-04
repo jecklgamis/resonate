@@ -6,6 +6,7 @@ import (
 )
 
 func NewRootCommand(version string) *cobra.Command {
+	buildVersion = version
 	root := &cobra.Command{
 		Use:   "resonate",
 		Short: "Load test HTTP, WebSocket, gRPC and SSE services",

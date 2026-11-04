@@ -92,11 +92,35 @@ unreadable sliver. Hover a bar for its range and count.
 
 ### The "Run settings" table
 
-Duration or request count, rate, workers, `max_workers`, `iterations` or the stages, as
-the run was configured, so a report opened later still says how it was produced. Only
-settings that were used are listed. It appears for runs started by `resonate hit` and
-`resonate run`; a report written from Go with `resonate.WriteHTML` shows it when you fill
-in `HTMLReport.Settings`.
+How the run was set up, so a report opened later still says what produced it. Only rows
+that apply are shown:
+
+| Row | What it says |
+| --- | --- |
+| Scenario file | The path and a short SHA-256 of the file's contents, so you can tell whether it has changed since (`resonate run` only) |
+| Protocol | `http`, `ws`, `sse` or `grpc` |
+| Target | Where the load went: scheme, host and path, up to four, then `+N more` |
+| Shape | What one iteration does, such as `3 flow steps, 1 setup step`, `2 targets (round-robin)`, `2 calls per iteration` |
+| Identities | How many identities the pool has |
+| Feeder | The source, such as `file users.csv (stream)` or `Kafka topic users, from start` |
+| Transport | Anything other than the default: HTTP/3, h2c, TLS verification off, client certificate, custom CA, no keep-alive, redirects not followed, or gRPC plaintext |
+| Timeout, Max idle connections, Connections, Max response body | The client tuning that was set. These explain a lot of high-concurrency latency |
+| Duration or Requests, Rate, Workers, Max workers, Iterations per VU, Stages | The load shape |
+| Resonate | The version and the platform and Go version it was built with |
+| Started, Finished | Wall-clock times of the run, with time zone |
+
+It deliberately leaves out anything that could be a secret, because reports get emailed
+and attached. A URL is cut at its `?` (and at the first `{{` of a template), and a
+`user:password@` part is dropped, so a token in a query string never appears. Header
+values, request bodies, identity contents and Kafka credentials are never listed.
+
+The report does not carry the scenario itself. Error messages are the exception to the
+rule above: they are Go's own text, which can include the full request URL (with its
+query string), so look at the *Errors* table before sharing a report from a URL with a
+token in it.
+
+`resonate hit` fills in the same table from its flags. A report written from Go with
+`resonate.WriteHTML` shows the table when you fill in `HTMLReport.Settings`.
 
 ## JSON Report
 

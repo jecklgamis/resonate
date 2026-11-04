@@ -65,7 +65,7 @@ func newRunCommand() *cobra.Command {
 				return err
 			}
 
-			return runAndReport(a, opts, runOpts{JSON: jsonOut, Quiet: quiet, DryRun: dryRun, Assertions: assertions, HTMLReport: htmlReport, JSONReport: jsonReport, ResultsFile: resultsFile, Title: args[0]})
+			return runAndReport(a, opts, runOpts{JSON: jsonOut, Quiet: quiet, DryRun: dryRun, Assertions: assertions, Settings: scenarioSettings(args[0], scenario), HTMLReport: htmlReport, JSONReport: jsonReport, ResultsFile: resultsFile, Title: args[0]})
 		},
 	}
 
