@@ -318,3 +318,22 @@ func TestDryRunReportsError(t *testing.T) {
 		t.Errorf("dryRun output = %q, want it to surface the error", out)
 	}
 }
+
+func TestRunSettings(t *testing.T) {
+	get := func(rows []report.Setting, name string) string {
+		for _, r := range rows {
+			if r.Name == name {
+				return r.Value
+			}
+		}
+		return ""
+	}
+	flat := runSettings(engine.Options{Duration: 30 * time.Second, Rate: 50, Workers: 7, MaxWorkers: 100})
+	if get(flat, "Duration") != "30s" || get(flat, "Rate") != "50 iterations/s" || get(flat, "Workers") != "7" || get(flat, "Max workers") == "" {
+		t.Errorf("flat settings wrong: %+v", flat)
+	}
+	staged := runSettings(engine.Options{Stages: []engine.Stage{{Duration: 10 * time.Second, Workers: 5, Rate: 20}}})
+	if get(staged, "Stages") != "10s → 5 workers, 20/s" || get(staged, "Duration") != "" || get(staged, "Workers") != "" {
+		t.Errorf("staged settings wrong: %+v", staged)
+	}
+}

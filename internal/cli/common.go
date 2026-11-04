@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -107,7 +108,7 @@ func runAndReport(a generator.Generator, opts engine.Options, out runOpts) error
 	}
 
 	if out.HTMLReport != "" {
-		if err := writeHTMLReport(out.HTMLReport, out.Title, summary, out.Assertions, failures); err != nil {
+		if err := writeHTMLReport(out.HTMLReport, out.Title, summary, out.Assertions, failures, runSettings(opts)); err != nil {
 			return fmt.Errorf("writing html report: %w", err)
 		}
 	}
@@ -197,7 +198,7 @@ func reportAssertionFailures(failures []report.Failure, total int) error {
 }
 
 // writeHTMLReport renders and writes the self-contained HTML report to path.
-func writeHTMLReport(path, title string, summary report.Summary, assertions []report.Assertion, failures []report.Failure) error {
+func writeHTMLReport(path, title string, summary report.Summary, assertions []report.Assertion, failures []report.Failure, settings []report.Setting) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -208,7 +209,48 @@ func writeHTMLReport(path, title string, summary report.Summary, assertions []re
 		Summary:    summary,
 		Assertions: assertions,
 		Failures:   failures,
+		Settings:   settings,
 	})
+}
+
+// runSettings lists the load shape a run was given, for the HTML report's "Run
+// settings" table. Only what was actually set is listed, so a flat run doesn't
+// show an empty stages row.
+func runSettings(opts engine.Options) []report.Setting {
+	var rows []report.Setting
+	add := func(name, value string) { rows = append(rows, report.Setting{Name: name, Value: value}) }
+
+	if len(opts.Stages) > 0 {
+		var parts []string
+		for _, st := range opts.Stages {
+			p := st.Duration.String() + " → " + strconv.Itoa(st.Workers) + " workers"
+			if st.Rate > 0 {
+				p += ", " + strconv.FormatFloat(st.Rate, 'f', -1, 64) + "/s"
+			}
+			parts = append(parts, p)
+		}
+		add("Stages", strings.Join(parts, "; "))
+	} else {
+		if opts.Duration > 0 {
+			add("Duration", opts.Duration.String())
+		}
+		if opts.Requests > 0 {
+			add("Requests", strconv.FormatUint(opts.Requests, 10))
+		}
+		if opts.Rate > 0 {
+			add("Rate", strconv.FormatFloat(opts.Rate, 'f', -1, 64)+" iterations/s")
+		} else {
+			add("Rate", "unpaced (as fast as workers allow)")
+		}
+		add("Workers", strconv.Itoa(engine.ResolveWorkers(opts)))
+	}
+	if opts.MaxWorkers > 0 {
+		add("Max workers", strconv.Itoa(opts.MaxWorkers)+" (open model)")
+	}
+	if opts.Iterations > 0 {
+		add("Iterations per VU", strconv.FormatUint(opts.Iterations, 10))
+	}
+	return rows
 }
 
 // writeJSONReport writes the summary as JSON to path — independent of the

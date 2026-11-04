@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"slices"
 	"sort"
 	"time"
 
@@ -146,6 +148,12 @@ type TimeBucket struct {
 	Requests int           `json:"requests"`
 	Success  int           `json:"success"`
 	Mean     time.Duration `json:"mean_latency"`
+	// P50/P95/P99 are this bucket's own latency percentiles (nearest rank), so
+	// the report can show latency degrading over the run. Zero for a bucket
+	// with no requests.
+	P50 time.Duration `json:"p50_latency"`
+	P95 time.Duration `json:"p95_latency"`
+	P99 time.Duration `json:"p99_latency"`
 }
 
 // HistogramBin counts results whose latency fell in (prev bin's Le, Le].
@@ -209,6 +217,7 @@ func bucketSeries(points []point, start time.Time, dur time.Duration) []TimeBuck
 
 	buckets := make([]TimeBucket, count)
 	sums := make([]time.Duration, count)
+	lats := make([][]time.Duration, count)
 	for i := range buckets {
 		buckets[i].Start = start.Add(time.Duration(i) * width)
 	}
@@ -222,6 +231,7 @@ func bucketSeries(points []point, start time.Time, dur time.Duration) []TimeBuck
 		}
 		buckets[idx].Requests++
 		sums[idx] += p.latency
+		lats[idx] = append(lats[idx], p.latency)
 		if p.success {
 			buckets[idx].Success++
 		}
@@ -229,14 +239,34 @@ func bucketSeries(points []point, start time.Time, dur time.Duration) []TimeBuck
 	for i := range buckets {
 		if buckets[i].Requests > 0 {
 			buckets[i].Mean = sums[i] / time.Duration(buckets[i].Requests)
+			slices.Sort(lats[i])
+			buckets[i].P50 = nearestRank(lats[i], 0.50)
+			buckets[i].P95 = nearestRank(lats[i], 0.95)
+			buckets[i].P99 = nearestRank(lats[i], 0.99)
 		}
 	}
 	return buckets
 }
 
-// latencyHistogram buckets latencies into a fixed number of equal-width
-// bins spanning [min, max], for the response-time distribution chart. Each
-// HDR bar is assigned to the bin containing its upper bound.
+// nearestRank returns the p-th percentile (p in (0, 1]) of an ascending,
+// non-empty slice by the nearest-rank method.
+func nearestRank(sorted []time.Duration, p float64) time.Duration {
+	i := int(math.Ceil(p*float64(len(sorted)))) - 1
+	if i < 0 {
+		i = 0
+	}
+	if i >= len(sorted) {
+		i = len(sorted) - 1
+	}
+	return sorted[i]
+}
+
+// latencyHistogram buckets latencies into a fixed number of log-spaced bins
+// spanning [min, max], for the response-time distribution chart. Log spacing
+// (each bin's upper edge a constant factor above the last) keeps a long tail
+// from squashing the bulk of the data into the first bar, which equal-width
+// bins did. Each HDR bar is assigned to the first bin whose upper edge is at
+// or above its upper bound.
 func latencyHistogram(h *hdrhistogram.Histogram, min, max time.Duration) []HistogramBin {
 	total := int(h.TotalCount())
 	if total == 0 {
@@ -247,14 +277,20 @@ func latencyHistogram(h *hdrhistogram.Histogram, min, max time.Duration) []Histo
 	if min == max {
 		return []HistogramBin{{Le: max, Count: total}}
 	}
-	width := (max - min) / numBins
-	if width <= 0 {
-		width = 1
+	// Geometric edges need a positive start; a sub-microsecond minimum is
+	// below what the report can show anyway.
+	lo := min
+	if lo < time.Microsecond {
+		lo = time.Microsecond
 	}
+	if lo >= max {
+		return []HistogramBin{{Le: max, Count: total}}
+	}
+	ratio := float64(max) / float64(lo)
 
 	bins := make([]HistogramBin, numBins)
 	for i := range bins {
-		bins[i].Le = min + time.Duration(i+1)*width
+		bins[i].Le = time.Duration(float64(lo) * math.Pow(ratio, float64(i+1)/numBins))
 	}
 	bins[numBins-1].Le = max // last bin always closes exactly on max, regardless of rounding
 
@@ -266,10 +302,7 @@ func latencyHistogram(h *hdrhistogram.Histogram, min, max time.Duration) []Histo
 		if v > max {
 			v = max
 		}
-		idx := int((v - min) / width)
-		if idx < 0 {
-			idx = 0
-		}
+		idx := sort.Search(numBins, func(i int) bool { return bins[i].Le >= v })
 		if idx >= numBins {
 			idx = numBins - 1
 		}

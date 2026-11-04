@@ -327,3 +327,83 @@ func TestWriteHTMLLinksTheRepoAndShowsP75(t *testing.T) {
 		t.Error("the p75 column should sit between p50 and p90")
 	}
 }
+
+func TestBucketSeriesPerBucketPercentiles(t *testing.T) {
+	agg := NewAggregator()
+	start := time.Now()
+	// Second 0: 1..100ms. Second 1: ten slow 1s requests.
+	for i := 1; i <= 100; i++ {
+		agg.Add(generator.Result{Timestamp: start, Latency: time.Duration(i) * time.Millisecond, StatusCode: 200})
+	}
+	for i := 0; i < 10; i++ {
+		agg.Add(generator.Result{Timestamp: start.Add(time.Second + time.Millisecond), Latency: time.Second, StatusCode: 200})
+	}
+	b := agg.Summary(2 * time.Second).TimeSeries
+	if len(b) < 2 {
+		t.Fatalf("got %d buckets, want >= 2", len(b))
+	}
+	if b[0].P50 != 50*time.Millisecond || b[0].P95 != 95*time.Millisecond || b[0].P99 != 99*time.Millisecond {
+		t.Errorf("bucket 0 p50/p95/p99 = %v/%v/%v, want 50ms/95ms/99ms", b[0].P50, b[0].P95, b[0].P99)
+	}
+	if b[1].P50 != time.Second || b[1].P99 != time.Second {
+		t.Errorf("bucket 1 p50/p99 = %v/%v, want 1s", b[1].P50, b[1].P99)
+	}
+}
+
+func TestLatencyHistogramBinsAreLogSpaced(t *testing.T) {
+	agg := NewAggregator()
+	now := time.Now()
+	// A long tail: 1000 fast requests and a few very slow ones.
+	for i := 0; i < 1000; i++ {
+		agg.Add(generator.Result{Timestamp: now, Latency: 2 * time.Millisecond, StatusCode: 200})
+	}
+	for i := 0; i < 5; i++ {
+		agg.Add(generator.Result{Timestamp: now, Latency: 2 * time.Second, StatusCode: 200})
+	}
+	bins := agg.Summary(time.Second).LatencyHistogram
+	if len(bins) != 20 {
+		t.Fatalf("got %d bins, want 20", len(bins))
+	}
+	// Constant ratio between successive edges (equal-width bins would have a
+	// constant difference instead).
+	r0 := float64(bins[5].Le) / float64(bins[4].Le)
+	r1 := float64(bins[15].Le) / float64(bins[14].Le)
+	if r0 < 1.2 || r1 < 1.2 || r0/r1 > 1.02 || r1/r0 > 1.02 {
+		t.Errorf("edge ratios %v and %v differ; bins are not log-spaced", r0, r1)
+	}
+	// The fast requests must not share a bin with the slow ones.
+	if bins[0].Count != 1000 || bins[19].Count != 5 {
+		t.Errorf("first/last bin counts = %d/%d, want 1000/5", bins[0].Count, bins[19].Count)
+	}
+}
+
+func TestWriteHTMLShowsLatencyOverTimeAndSettings(t *testing.T) {
+	agg := NewAggregator()
+	start := time.Now()
+	for i := 0; i < 20; i++ {
+		agg.Add(generator.Result{Timestamp: start.Add(time.Duration(i) * 200 * time.Millisecond), Latency: time.Duration(i+1) * time.Millisecond, StatusCode: 200})
+	}
+	var buf bytes.Buffer
+	err := WriteHTML(&buf, HTMLReport{Title: "t", Summary: agg.Summary(4 * time.Second),
+		Settings: []Setting{{Name: "Workers", Value: "7"}, {Name: "Rate", Value: "50 iterations/s"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"Latency over time", `class="line line-p95"`, "Run settings", "50 iterations/s", "log-spaced bins"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+	if strings.Contains(out, "<script") {
+		t.Error("report must stay script-free")
+	}
+
+	buf.Reset()
+	if err := WriteHTML(&buf, HTMLReport{Title: "t", Summary: agg.Summary(4 * time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "Run settings") {
+		t.Error("no Settings should mean no Run settings section")
+	}
+}

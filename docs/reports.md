@@ -43,7 +43,8 @@ of iterations:
 `report.html`, written to the current directory by default. A single
 self-contained file (inline CSS/SVG, no scripts, no external assets) — opens
 standalone, attachable/emailable/archivable as-is. Includes KPI cards, a
-requests-over-time chart, a response-time histogram, the latency
+run-settings table, a requests-over-time chart, a latency-over-time chart, a
+response-time histogram, the latency
 percentile table (p50, p75, p90, p95, p99), status/error breakdowns, and (for
 `resonate run` with `assertions`) a pass/fail table. The footer links back to the
 [resonate repository](https://github.com/jecklgamis/resonate). Change the path with
@@ -67,12 +68,44 @@ successes (green) above, on a grid:
 The first bar of a run paced with `rate` is often about twice the others; see
 [Request Counts and the Startup Burst](execution-models.md#request-counts-and-the-startup-burst).
 
+### The "Latency over time" chart
+
+Three lines, p50 (green), p95 (blue) and p99 (red), each computed from the requests
+that finished in that time bucket. The run-wide percentiles in the table hide a slowdown
+that starts partway through; this chart shows when it started and whether it keeps
+getting worse. The y axis is in milliseconds (microseconds if every latency is under
+1ms), and hovering a bucket shows its three values. A bucket with no requests leaves a
+gap in the lines rather than dropping to zero.
+
+A bucket with only a handful of requests has a noisy p99 (with fewer than 100 requests
+the p99 is simply the slowest one), so a spiky p99 line on a low-rate run is not
+necessarily a problem. The buckets are the same as in the requests chart, so a `5s` bar
+there means each point here covers 5 seconds.
+
+### The "Response time distribution" chart
+
+A histogram of every request's latency in 20 bins. The bins are **log-spaced**: each
+bin's upper edge is a constant factor above the previous one, and the labels along the
+bottom mark every fourth edge. A log scale keeps a long tail visible, where equal-width
+bins would put nearly every request in the first bar and show the slow ones as an
+unreadable sliver. Hover a bar for its range and count.
+
+### The "Run settings" table
+
+Duration or request count, rate, workers, `max_workers`, `iterations` or the stages, as
+the run was configured, so a report opened later still says how it was produced. Only
+settings that were used are listed. It appears for runs started by `resonate hit` and
+`resonate run`; a report written from Go with `resonate.WriteHTML` shows it when you fill
+in `HTMLReport.Settings`.
+
 ## JSON Report
 
 `report.json`, written to the current directory by default — the same
 `Summary` structure `--json` prints to stdout, just saved to a file
 regardless of what the stdout format is. Useful for archiving a run or
-feeding it into other tooling. Change the path with `--json-report`, or
+feeding it into other tooling. Each `time_series` bucket carries `p50_latency`,
+`p95_latency` and `p99_latency` alongside `mean_latency`, and `latency_histogram`
+bins are log-spaced (`le` is each bin's upper edge). Change the path with `--json-report`, or
 pass `""` to disable it. Independent of `--json`, which only controls the
 *stdout* format.
 

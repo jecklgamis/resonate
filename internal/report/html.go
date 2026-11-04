@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -29,6 +30,16 @@ type HTMLReport struct {
 	Summary     Summary
 	Assertions  []Assertion
 	Failures    []Failure
+	// Settings describes how the run was configured (rate, workers, stages,
+	// ...), shown as a "Run settings" table so a report opened later still says
+	// how it was produced. The report package doesn't interpret them.
+	Settings []Setting
+}
+
+// Setting is one name/value row of the "Run settings" table.
+type Setting struct {
+	Name  string
+	Value string
 }
 
 // WriteHTML renders a single self-contained HTML file (inline CSS, inline
@@ -46,7 +57,9 @@ func WriteHTML(w io.Writer, r HTMLReport) error {
 		AssertionResults: assertionResults(r.Summary, r.Assertions, r.Failures),
 		StatusCodes:      sortedStatusCodes(r.Summary.StatusCodes),
 		Errors:           sortedErrors(r.Summary.Errors),
+		Settings:         r.Settings,
 		ThroughputChart:  throughputSVG(r.Summary.TimeSeries),
+		LatencyChart:     latencySVG(r.Summary.TimeSeries),
 		HistogramChart:   histogramSVG(r.Summary.LatencyHistogram),
 	}
 	return htmlTemplate.Execute(w, data)
@@ -59,7 +72,9 @@ type htmlData struct {
 	AssertionResults []assertionResult
 	StatusCodes      []statusCodeRow
 	Errors           []errorRow
+	Settings         []Setting
 	ThroughputChart  template.HTML
+	LatencyChart     template.HTML
 	HistogramChart   template.HTML
 }
 
@@ -305,11 +320,154 @@ func histogramSVG(bins []HistogramBin) template.HTML {
 		h := plotH * frac
 		x := padL + float64(i)*barW
 		y := 4 + plotH - h
-		buf.WriteString(fmt.Sprintf(`<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" class="bar-hist"><title>&le; %s: %d</title></rect>`,
-			x, y, maxF(barW-0.5, 0.5), h, b.Le.Round(time.Millisecond), b.Count))
+		from := "0"
+		if i > 0 {
+			from = fmtLatency(bins[i-1].Le)
+		}
+		buf.WriteString(fmt.Sprintf(`<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" class="bar-hist"><title>%s to %s: %d</title></rect>`,
+			x, y, maxF(barW-0.5, 0.5), h, from, fmtLatency(b.Le), b.Count))
 	}
-	buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis">%s</text>`, padL, chartH-4, bins[0].Le.Round(time.Millisecond)))
-	buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="end">%s</text>`, chartW-2, chartH-4, bins[len(bins)-1].Le.Round(time.Millisecond)))
+	// Bins are log-spaced, so label every few bin edges (each is a constant factor
+	// above the last) rather than just the two ends.
+	if len(bins) > 1 {
+		for i := 3; i < len(bins); i += 4 {
+			x := padL + float64(i+1)*barW
+			anchor := "middle"
+			if i == len(bins)-1 {
+				anchor, x = "end", chartW-2
+			}
+			buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="%s">%s</text>`, x, chartH-4, anchor, fmtLatency(bins[i].Le)))
+		}
+		buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="end">log-spaced bins</text>`, chartW-4, 15.0))
+	} else {
+		buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="end">%s</text>`, chartW-2, chartH-4, fmtLatency(bins[0].Le)))
+	}
+	buf.writeFooter()
+	return template.HTML(buf.String())
+}
+
+// fmtLatency formats a duration for a chart label: microseconds below 1ms,
+// 10µs precision below 1s, milliseconds above, so a log axis reads sensibly
+// across orders of magnitude (plain Round(time.Millisecond) printed "0s").
+func fmtLatency(d time.Duration) string {
+	switch {
+	case d < time.Millisecond:
+		return d.Round(time.Microsecond).String()
+	case d < time.Second:
+		return d.Round(10 * time.Microsecond).String()
+	default:
+		return d.Round(time.Millisecond).String()
+	}
+}
+
+// latencySVG draws the "Latency over time" chart: p50, p95 and p99 per time
+// bucket as lines, so a slowdown that begins partway through the run is visible
+// (the run-wide percentiles hide it). Same plain-SVG-plus-CSS approach and
+// hover technique as throughputSVG: a transparent column per bucket directly
+// followed by its tooltip, all emitted after the lines.
+func latencySVG(buckets []TimeBucket) template.HTML {
+	maxLat := time.Duration(0)
+	for _, b := range buckets {
+		if b.P99 > maxLat {
+			maxLat = b.P99
+		}
+	}
+	if len(buckets) == 0 || maxLat == 0 {
+		return template.HTML(`<p class="empty">No data.</p>`)
+	}
+
+	// Round the top of the y axis up to a 1-2-5 step of the unit it is shown in.
+	unit, unitName := time.Millisecond, "ms"
+	if maxLat < time.Millisecond {
+		unit, unitName = time.Microsecond, "µs"
+	}
+	maxU := float64(maxLat) / float64(unit)
+	step := niceStep(maxU, 4)
+	top := math.Ceil(maxU/step) * step
+
+	const padL, padB, padT = 48.0, 22.0, 4.0
+	plotW := chartW - padL - 4
+	plotH := chartH - padB - padT
+	colW := plotW / float64(len(buckets))
+	// A line point sits in the middle of its bucket's column.
+	px := func(i int) float64 { return padL + (float64(i)+0.5)*colW }
+	py := func(d time.Duration) float64 { return padT + plotH*(1-float64(d)/float64(unit)/top) }
+
+	buf := &htmlBuf{}
+	buf.writeHeader()
+	for v := 0.0; v <= top+step/1000; v += step {
+		y := padT + plotH*(1-v/top)
+		buf.WriteString(fmt.Sprintf(`<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" class="grid"/>`, padL, y, chartW-2, y))
+		buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="end">%g</text>`, padL-6, y+3.5, math.Round(v*100)/100))
+	}
+	buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="end">%s</text>`, chartW-4, padT+11, unitName))
+	every := tickEvery(len(buckets), int(plotW/80))
+	for i := 0; i < len(buckets); i += every {
+		x := padL + float64(i)*colW
+		buf.WriteString(fmt.Sprintf(`<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" class="grid grid-v"/>`, x, padT, x, padT+plotH))
+		anchor, lx := "middle", x
+		if x > chartW-32 {
+			anchor, lx = "end", chartW-2
+		}
+		buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="axis" text-anchor="%s">%s</text>`, lx, chartH-7, anchor, buckets[i].Start.Format("15:04:05")))
+	}
+
+	// One polyline per percentile. Buckets with no requests have no latency, so a
+	// line breaks there instead of dropping to zero.
+	series := []struct {
+		class string
+		get   func(TimeBucket) time.Duration
+	}{
+		{"line-p99", func(b TimeBucket) time.Duration { return b.P99 }},
+		{"line-p95", func(b TimeBucket) time.Duration { return b.P95 }},
+		{"line-p50", func(b TimeBucket) time.Duration { return b.P50 }},
+	}
+	for _, sr := range series {
+		var pts []string
+		var lone [2]float64 // the only point so far, used if the run of buckets ends at one
+		flush := func() {
+			if len(pts) == 1 { // a lone point has no line to draw; show it as a dot
+				buf.WriteString(fmt.Sprintf(`<circle cx="%.1f" cy="%.1f" r="2" class="%s dot"/>`, lone[0], lone[1], sr.class))
+			} else if len(pts) > 1 {
+				buf.WriteString(fmt.Sprintf(`<polyline points="%s" class="line %s"/>`, strings.Join(pts, " "), sr.class))
+			}
+			pts = pts[:0]
+		}
+		for i, b := range buckets {
+			if b.Requests == 0 {
+				flush()
+				continue
+			}
+			x, y := px(i), py(sr.get(b))
+			if len(pts) == 0 {
+				lone = [2]float64{x, y}
+			}
+			pts = append(pts, fmt.Sprintf("%.1f,%.1f", x, y))
+		}
+		flush()
+	}
+
+	const tipW, tipH = 176.0, 68.0
+	for i, b := range buckets {
+		x := padL + float64(i)*colW
+		buf.WriteString(fmt.Sprintf(`<rect x="%.2f" y="%.1f" width="%.2f" height="%.1f" class="hit"/>`, x, padT, colW, plotH))
+		tx := x + colW + 6
+		if tx+tipW > chartW-2 {
+			tx = x - 6 - tipW
+		}
+		ty := padT + 4
+		buf.WriteString(fmt.Sprintf(`<g class="tip"><rect x="%.1f" y="%.1f" width="%.0f" height="%.0f" rx="4" class="tip-bg"/>`, tx, ty, tipW, tipH))
+		buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="tip-t">%s  (+%s)</text>`, tx+9, ty+15,
+			b.Start.Format("15:04:05"), b.Start.Sub(buckets[0].Start).Round(time.Second)))
+		if b.Requests == 0 {
+			buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="tip-v">no requests</text>`, tx+9, ty+34))
+		} else {
+			buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="tip-v">p50 %s</text>`, tx+9, ty+31, fmtLatency(b.P50)))
+			buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="tip-v">p95 %s</text>`, tx+9, ty+46, fmtLatency(b.P95)))
+			buf.WriteString(fmt.Sprintf(`<text x="%.1f" y="%.1f" class="tip-v">p99 %s</text>`, tx+9, ty+61, fmtLatency(b.P99)))
+		}
+		buf.WriteString(`</g>`)
+	}
 	buf.writeFooter()
 	return template.HTML(buf.String())
 }

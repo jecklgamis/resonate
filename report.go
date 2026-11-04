@@ -54,6 +54,9 @@ func ParseThreshold(metric, value string) (float64, error) {
 // HTMLReport is everything WriteHTML needs beyond the Summary itself.
 type HTMLReport = report.HTMLReport
 
+// Setting is one name/value row of the HTML report's "Run settings" table.
+type Setting = report.Setting
+
 // WriteHTML renders a single self-contained HTML file (inline CSS, inline
 // SVG charts, no external assets) summarizing r: KPI cards,
 // a requests-over-time chart, a response-time distribution histogram, and
