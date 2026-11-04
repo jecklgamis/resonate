@@ -118,7 +118,7 @@ Method groups on `Scenario`:
   has been called); a load error is deferred to `Build()`/`Run()`.
   A **Kafka topic** as the source isn't a builder method: build it with
   `resonate.NewKafkaFeeder(resonate.KafkaFeederOptions{Brokers: ..., Topic: ...})`
-  (options mirror [the YAML](scenarios.md#feeding-from-a-kafka-topic)) and set
+  (options mirror [the YAML](kafka-feeder.md#options); see [From Go](kafka-feeder.md#from-go)) and set
   it as `HTTPOptions.Feeder` / `WSOptions.Feeder` / `GRPCOptions.Feeder` (or
   `.HTTP.Feeder` on `FlowOptions`/`SSEOptions`); `Close()` it after the run.
 - **Assertions** — `Assert(...Assertion)` accumulates assertions;

@@ -72,7 +72,7 @@ What an iteration produces:
   - `extract.go` — the extraction / `expect_body` rule language (`json:`, `yaml:`,
     `xml:`, `regex:`, `css:`, `header:`, `status`), shared by every protocol.
   - `feeder.go`, `kafka_feeder.go` — data feeders: CSV/JSON files (in-memory, random, or
-    streamed) and Kafka topics.
+    streamed) and Kafka topics (see the [Kafka Feeder](kafka-feeder.md) guide).
 - **`internal/tmpl`** — per-request templating (`{{ }}`) for URLs, query params,
   headers and bodies. See [Request Templating](usage.md#request-templating).
 - **`internal/engine`** — the worker pool and rate limiter that drive a `Generator`
@@ -117,7 +117,7 @@ has the full rationale for each.
 - **HTTP/3 is opt-in, with no fallback.** A silent fall back to TCP would make an HTTP/3
   run measure HTTP/1.1, so the tests assert what the *server* observed.
 - **One source of truth per topic.** Each protocol with real depth has one guide page
-  (`grpc.md`, `sse.md`, `http3.md`); `scenarios.md` points to it rather than repeating it.
+  (`grpc.md`, `sse.md`, `http3.md`, and `kafka-feeder.md` for the Kafka feeder); `scenarios.md` points to it rather than repeating it.
 
 ## Adding a protocol
 

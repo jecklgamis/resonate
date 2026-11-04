@@ -7,7 +7,7 @@
 protocol: http
 
 load:
-  duration: 3s
+  duration: 30s
   rate: 10
   workers: 5
 

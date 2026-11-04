@@ -2,6 +2,7 @@
 - [Install](install.md)
 - [Usage](usage.md)
 - [Scenarios](scenarios.md)
+- [Kafka Feeder](kafka-feeder.md)
 - [gRPC](grpc.md)
 - [Server-Sent Events](sse.md)
 - [HTTP/3](http3.md)

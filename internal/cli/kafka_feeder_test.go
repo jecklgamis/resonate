@@ -2,12 +2,18 @@ package cli
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/jecklgamis/resonate/internal/config"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -95,5 +101,79 @@ func TestRunCommandKafkaFeederConfigErrors(t *testing.T) {
 				t.Errorf("error = %v, want http.feeder ... %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// Every complete `protocol:` scenario in the Kafka feeder guide is strict-parsed
+// (a misspelled key would otherwise be silently ignored by resonate itself) and,
+// unless marked parse-only, run against an in-process broker and HTTP server with
+// only the addresses and the load swapped. The shipped example gets the same.
+func TestKafkaFeederGuideAndExampleAreValidAndRun(t *testing.T) {
+	// Read everything first: running a scenario changes the working directory.
+	md, err := os.ReadFile("../../docs/kafka-feeder.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	example, err := os.ReadFile("../../examples/http-kafka-feeder.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := []docBlock{{src: string(example)}}
+	fence := regexp.MustCompile("(?s)(<!-- docs-test: parse-only -->\n)?```yaml\n(.*?)```")
+	for _, m := range fence.FindAllStringSubmatch(string(md), -1) {
+		if strings.HasPrefix(strings.TrimSpace(m[2]), "protocol:") {
+			blocks = append(blocks, docBlock{src: m[2], parseOnly: m[1] != ""})
+		}
+	}
+
+	addr := kafkaWithMessages(t, "users", `{"email":"a@example.com","password":"x","id":"1"}`, `{"email":"b@example.com","password":"y","id":"2"}`)
+	var mu sync.Mutex
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		seen = append(seen, string(b))
+		mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+
+	ran := 0
+	for i, blk := range blocks {
+		dec := yaml.NewDecoder(strings.NewReader(blk.src))
+		dec.KnownFields(true)
+		var sc config.Scenario
+		if err := dec.Decode(&sc); err != nil {
+			t.Errorf("block %d doesn't parse strictly: %v\n%s", i+1, err, blk.src)
+			continue
+		}
+		if blk.parseOnly {
+			continue
+		}
+		ran++
+		sc.HTTP.Feeder.Kafka.Brokers = []string{addr}
+		for j := range sc.HTTP.Targets {
+			sc.HTTP.Targets[j].URL = srv.URL + "/login"
+		}
+		sc.Load = config.LoadConfig{Requests: 4, Workers: 1}
+		b, err := yaml.Marshal(sc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		seen = nil
+		mu.Unlock()
+		cmd := newRunCommand()
+		cmd.SetArgs([]string{writeTempScenario(t, string(b)), "--quiet"})
+		captureStdout(t, func() {
+			if err := cmd.Execute(); err != nil {
+				t.Errorf("block %d failed: %v\n%s", i+1, err, blk.src)
+			}
+		})
+		if len(seen) != 4 || !strings.Contains(seen[0], "a@example.com") || !strings.Contains(seen[1], "b@example.com") || !strings.Contains(seen[2], "a@example.com") {
+			t.Errorf("block %d sent %q, want the two messages cycling", i+1, seen)
+		}
+	}
+	if len(blocks) < 3 || ran < 2 {
+		t.Fatalf("found %d scenarios and ran %d; expected the example plus the guide's (at least 3 and 2)", len(blocks), ran)
 	}
 }
