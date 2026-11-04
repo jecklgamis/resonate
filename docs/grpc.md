@@ -180,7 +180,7 @@ templates (the functions are listed under
 | `{{.Seq}}` | A counter, unique per iteration and constant across the calls within one. |
 | `{{.VU}}` | The virtual user's number. |
 | `{{.Identity.<key>}}` | The VU's [identity](#metadata-and-authentication). |
-| `{{.Feeder.<column>}}` | This iteration's row from a [feeder](scenarios.md#feeders). |
+| `{{.Feeder.<column>}}` | This iteration's row from a [feeder](feeders.md). |
 | `{{.Vars.<name>}}` | A value [extracted](#chaining-calls) from an earlier call. |
 
 Details worth knowing:
@@ -229,7 +229,7 @@ Identities are handed out round-robin, one per virtual user, and stay with that
 user. See [Multi-Step Flows](scenarios.md#multi-step-flows-and-response-chaining)
 for how they behave over a VU's lifetime. For data that changes every iteration
 (ids, names) use a `feeder`, with the same `file` and `mode` options as for
-[HTTP](scenarios.md#feeders).
+[HTTP](feeders.md).
 
 ## Checking responses
 

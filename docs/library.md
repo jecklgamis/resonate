@@ -113,7 +113,7 @@ Method groups on `Scenario`:
   [Status, Header, and Body Checks](usage.md#status-header-and-body-checks).
 - **Feeders** — `Feeder(path, mode)` loads a CSV/JSON file and hands out
   one row per iteration as `{{.Feeder.<column>}}` — see
-  [Feeders](scenarios.md#feeders). Applies to whichever kind of
+  [Feeders](feeders.md). Applies to whichever kind of
   `Scenario` is being built (HTTP/flow, or the WS connection once `WS`
   has been called); a load error is deferred to `Build()`/`Run()`.
   A **Kafka topic** as the source isn't a builder method: build it with

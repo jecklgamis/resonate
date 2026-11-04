@@ -1,9 +1,11 @@
 # Kafka Feeder
 
-A [feeder](scenarios.md#feeders) hands each iteration one row of data, exposed to
+A [feeder](feeders.md) hands each iteration one row of data, exposed to
 templates as `{{.Feeder.<column>}}`. A **Kafka feeder** takes those rows from the messages
 of a Kafka topic instead of a CSV/JSON file: replay a large, real dataset, or feed a test
 from data another system is producing.
+
+For file feeders and the concepts common to all feeders, see the [Feeders guide](feeders.md).
 
 It is a *data source* only. Resonate reads the topic; it does not produce load **to** Kafka.
 

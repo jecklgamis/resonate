@@ -62,63 +62,24 @@ scenarios don't. See
 
 ## Feeders
 
-`http.feeder`/`ws.feeder` hand out one row of data per iteration from a
-CSV or JSON file (or [a Kafka topic](#feeding-from-a-kafka-topic)), exposed to templates as `{{.Feeder.<column>}}` — for
-replaying real-looking data instead of pure random values.
+`http.feeder` (and `ws.feeder`, `sse.feeder`, `grpc.feeder`) hands out one row of data per
+iteration, exposed to templates as `{{.Feeder.<column>}}`, for replaying a real dataset instead of
+random values. The rows come from a CSV or JSON file, or from a Kafka topic:
 
 ```yaml
 http:
   feeder:
-    file: users.csv     # or users.json
-    mode: sequential     # "sequential" (default, round-robin), "random", or "stream"
+    file: users.csv     # or users.json; mode: sequential (default), random or stream
   targets:
     - method: POST
       url: http://localhost:8080/login
       body: '{"email": "{{.Feeder.email}}", "password": "{{.Feeder.password}}"}'
 ```
 
-`users.csv` (first row is the column names):
-
-```csv
-email,password
-alice@example.com,hunter2
-bob@example.com,hunter3
-```
-
-Notes:
-- `mode: sequential` (default) hands out rows round-robin, wrapping
-  around; `mode: random` picks a row uniformly at random each time. Both
-  load the whole file into memory once, at construction.
-- `mode: stream` is for a file too large to fit in memory — reads
-  incrementally in the background, holding only a small buffer. Behaves
-  like `sequential`; no streaming `random` yet.
-- For `http.flow`, one row is picked per iteration and stays the same
-  across every step (like `.Identity`); `http.setup` picks its own row
-  once per virtual user.
-- A missing/empty `{{.Feeder.column}}` key renders as `""`, same as
-  `{{.Vars.*}}`.
-- Construction fails fast (missing file, malformed data, empty dataset)
-  before any request is sent.
-
-See [`examples/http-feeder.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-feeder.yaml)
-and [`examples/data/users.csv`](https://github.com/jecklgamis/resonate/blob/main/examples/data/users.csv).
-
-### Feeding from a Kafka topic
-
-A feeder can consume a Kafka topic instead of a file, with each message a row:
-
-```yaml
-http:
-  feeder:
-    kafka:
-      brokers: ["localhost:9092"]
-      topic: users
-```
-
-It works under every protocol, reads the topic directly (no consumer group, no committed
-offsets) and keeps memory bounded however large the topic is. See the
-[Kafka Feeder guide](kafka-feeder.md) for the columns a row has, `from`/`on_end`, authentication,
-and troubleshooting.
+See the [Feeders guide](feeders.md) for file formats, the three modes, sizing, when a row is
+picked, and the Go API, and the [Kafka Feeder guide](kafka-feeder.md) for topics. Runnable
+examples: [`examples/http-feeder.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-feeder.yaml)
+and [`examples/http-kafka-feeder.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-kafka-feeder.yaml).
 
 ## Multi-Step Flows and Response Chaining
 

@@ -21,7 +21,7 @@ for the repo's top-level overview, see its
 | Execution models | Closed model (fixed concurrency) and open model (constant-arrival-rate, auto-scaling concurrency to sustain a target rate) — flat or ramped via staged schedules |
 | Multi-step flows | Response chaining (`{{.Vars.*}}`), per-virtual-user identities, think-time/control flow (`pause`, `repeat`, `during`, `if`) |
 | Request templating | `{{ }}` expressions for unique IDs, random payloads, fresh auth headers |
-| Data feeders | CSV/JSON feeders (with a streaming mode for files too large to fit in memory), or a Kafka topic ([guide](kafka-feeder.md)), for driving requests from real data |
+| Data feeders | CSV/JSON feeders (with a streaming mode for files too large to fit in memory), or a Kafka topic, for driving requests from real data. See the [Feeders guide](feeders.md) |
 | Base URL & file bodies | `base_url` to avoid repeating a host per target; templated or raw file-sourced request bodies for large/binary payloads |
 | Response checks | Per-request `expect_status`/`expect_headers`/`expect_body`, matched via JSONPath, XPath, regex, or CSS selectors, overriding the default 2xx/3xx success criterion |
 | WebSocket support | Connect, send/receive a message sequence, chain extracted values the same way HTTP flows do |
@@ -68,9 +68,9 @@ what each of the four report formats contains.
   templating, status code checks, live progress, dry runs.
 - **[Scenarios](scenarios.md)** — the YAML schema: targets, feeders, flows,
   identities, WebSocket, assertions (and pointers to Server-Sent Events and gRPC).
-- **[Kafka Feeder](kafka-feeder.md)** — the full guide: feeding requests from a
-  Kafka topic, columns, wrap/wait, auth, memory behaviour, troubleshooting, and the
-  Go API.
+- **[Feeders](feeders.md)** — the full guide: CSV/JSON files and Kafka topics as data
+  sources, the modes, sizing, when a row is picked, and the Go API; plus the detailed
+  **[Kafka Feeder](kafka-feeder.md)** guide.
 - **[gRPC](grpc.md)** — the full guide: unary and streaming calls, schema
   sources, messages, auth, checks, results, troubleshooting, and a runnable
   example server.

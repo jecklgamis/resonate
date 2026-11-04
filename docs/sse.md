@@ -261,7 +261,7 @@ Identities are handed out round-robin, one per virtual user, and stay with that 
 (see [Multi-Step Flows](scenarios.md#multi-step-flows-and-response-chaining) for how
 they behave over a VU's lifetime). For data that should change every iteration (a
 different user, topic or prompt), use a `feeder`, with the same `file` and `mode` as for
-[HTTP](scenarios.md#feeders):
+[HTTP](feeders.md):
 
 ```yaml
 sse:

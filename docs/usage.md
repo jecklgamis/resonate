@@ -122,8 +122,8 @@ expressions, re-rendered independently per request. A field with no
 | `uuid` | Random UUID (filler data, not crypto-secure) |
 
 See [`examples/http-templated.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-templated.yaml).
-Scenario files can also drive requests from a real CSV/JSON dataset — see
-[Feeders](scenarios.md#feeders).
+Scenario files can also drive requests from a real CSV/JSON dataset or a Kafka topic — see
+[Feeders](feeders.md).
 
 ## Status, Header, and Body Checks
 
