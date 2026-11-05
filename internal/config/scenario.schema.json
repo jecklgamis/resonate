@@ -173,14 +173,21 @@
           "default": "sequential",
           "description": "Row selection mode. Sequential wraps around; stream reads incrementally."
         },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } },
+          "description": "Inline rows (an array feeder), each a column-to-value map, instead of a file. mode may be sequential or random, not stream."
+        },
         "kafka": {
           "$ref": "#/$defs/kafkaFeeder",
           "description": "Consume a Kafka topic instead of reading a file."
         }
       },
       "oneOf": [
-        { "required": ["file"], "not": { "required": ["kafka"] } },
-        { "required": ["kafka"], "not": { "anyOf": [{ "required": ["file"] }, { "required": ["mode"] }] } }
+        { "required": ["file"], "not": { "anyOf": [{ "required": ["kafka"] }, { "required": ["rows"] }] } },
+        { "required": ["rows"], "not": { "anyOf": [{ "required": ["file"] }, { "required": ["kafka"] }, { "properties": { "mode": { "const": "stream" } }, "required": ["mode"] }] } },
+        { "required": ["kafka"], "not": { "anyOf": [{ "required": ["file"] }, { "required": ["rows"] }, { "required": ["mode"] }] } }
       ]
     },
     "kafkaFeeder": {

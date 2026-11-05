@@ -72,7 +72,7 @@ What an iteration produces:
   - `extract.go` — the extraction / `expect_body` rule language (`json:`, `yaml:`,
     `xml:`, `regex:`, `css:`, `header:`, `status`), shared by every protocol.
   - `feeder.go`, `kafka_feeder.go` — data feeders: CSV/JSON files (in-memory, random, or
-    streamed) and Kafka topics (see [Feeders](feeders.md) and [Kafka Feeder](kafka-feeder.md)).
+    streamed), inline array rows (`NewArrayFeeder`) and Kafka topics (see [Feeders](feeders.md) and [Kafka Feeder](kafka-feeder.md)).
 - **`internal/tmpl`** — per-request templating (`{{ }}`) for URLs, query params,
   headers and bodies. See [Request Templating](usage.md#request-templating).
 - **`internal/engine`** — the worker pool and rate limiter that drive a `Generator`

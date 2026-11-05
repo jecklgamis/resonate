@@ -77,7 +77,7 @@ http:
 ```
 
 See the [Feeders guide](feeders.md) for file formats, the three modes, sizing, when a row is
-picked, and the Go API, and the [Kafka Feeder guide](kafka-feeder.md) for topics. Runnable
+picked, inline `rows:` (an array feeder), and the Go API, and the [Kafka Feeder guide](kafka-feeder.md) for topics. Runnable
 examples: [`examples/http-feeder.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-feeder.yaml)
 and [`examples/http-kafka-feeder.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-kafka-feeder.yaml).
 

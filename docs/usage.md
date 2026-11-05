@@ -11,7 +11,7 @@
 | Setup steps | Not available | `http.setup` — runs once per VU before its first iteration |
 | Ramping load | Flat only (`--rate`/`--workers`/`--max-workers`) | Flat or `load.stages` (ramp profiles) |
 | Assertions / CI gating | `--assert` (5 operators) | `assertions:` (7 condition kinds) |
-| Data-driven requests | Templating functions only | `http.feeder`/`ws.feeder` — one CSV/JSON row, or Kafka message, per iteration (`{{.Feeder.*}}`) |
+| Data-driven requests | Templating functions only | `http.feeder`/`ws.feeder` — one CSV/JSON row, inline row, or Kafka message, per iteration (`{{.Feeder.*}}`) |
 | mTLS / CA / HTTP/3 / h2c / keep-alive | Yes (`--cert`/`--key`/`--ca-cert`/`--http3`/`--h2c`/`--no-keepalive`) | Yes, as `http.*` fields (`http3` also under `sse`) |
 | Use case | Quick, one-off endpoint check | Reusable, checked-into-source-control scenarios; CI-gated load tests |
 

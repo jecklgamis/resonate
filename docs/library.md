@@ -177,7 +177,7 @@ struct-literal API it's built on is still available for cases that want
 more control (e.g. building a `Generator` once and driving it with your
 own retry loop) — `resonate.NewHTTPGenerator`, `resonate.NewFlowGenerator`,
 `resonate.NewWSGenerator`, `resonate.NewSSEGenerator`,
-`resonate.NewGRPCGenerator`, `resonate.Feeder`,
+`resonate.NewGRPCGenerator`, `resonate.Feeder`, `resonate.NewArrayFeeder`,
 `resonate.Run`, `resonate.Summary`, `resonate.Assertion`/`Evaluate` cover
 the same ground as `resonate hit`/`resonate run`, as Go APIs instead of
 flags/YAML:
