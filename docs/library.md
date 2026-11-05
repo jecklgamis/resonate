@@ -111,7 +111,8 @@ Method groups on `Scenario`:
   `PauseRange`, `Repeat`/`During`/`If`/`End`.
 - **Checks** — `ExpectStatus`, `ExpectHeader`, `ExpectBody` — see
   [Status, Header, and Body Checks](usage.md#status-header-and-body-checks).
-- **Feeders** — `Feeder(path, mode)` loads a CSV/JSON file and hands out
+- **Feeders** — `Feeder(path, mode)` loads a CSV/JSON file (or
+  `FeederRows(rows, mode)` takes rows directly) and hands out
   one row per iteration as `{{.Feeder.<column>}}` — see
   [Feeders](feeders.md). Applies to whichever kind of
   `Scenario` is being built (HTTP/flow, or the WS connection once `WS`

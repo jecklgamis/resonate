@@ -300,3 +300,16 @@ func TestSSEGeneratorRunEndToEnd(t *testing.T) {
 		t.Errorf("SuccessRate = %v, want 1", summary.SuccessRate)
 	}
 }
+
+func TestArrayFeederViaFacade(t *testing.T) {
+	f, err := resonate.NewArrayFeeder([]map[string]string{{"email": "a@example.com"}}, "sequential")
+	if err != nil {
+		t.Fatalf("NewArrayFeeder error: %v", err)
+	}
+	if got := f.Next()["email"]; got != "a@example.com" {
+		t.Errorf("Next()[email] = %q", got)
+	}
+	if _, err := resonate.NewScenario().Get("http://localhost:1").FeederRows(nil, "").Build(); err == nil {
+		t.Error("FeederRows(nil) should fail at Build")
+	}
+}

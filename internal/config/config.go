@@ -204,6 +204,11 @@ type FeederConfig struct {
 	// file.
 	File string `yaml:"file"`
 
+	// Rows is an inline array of rows (each a column->value map), as an
+	// alternative to File — mutually exclusive with it. Mode "stream" is
+	// not allowed with Rows.
+	Rows []map[string]string `yaml:"rows"`
+
 	// Mode is "sequential" (default: rows handed out round-robin, wrapping
 	// around), "random" (a row chosen uniformly at random each time), or
 	// "stream". "sequential"/"random" read File into memory once, at
@@ -221,7 +226,7 @@ type FeederConfig struct {
 }
 
 // Configured reports whether any data source is set.
-func (f FeederConfig) Configured() bool { return f.File != "" || f.Kafka != nil }
+func (f FeederConfig) Configured() bool { return f.File != "" || len(f.Rows) > 0 || f.Kafka != nil }
 
 // KafkaFeederConfig is a feeder fed by a Kafka topic. See
 // internal/generator.KafkaFeederOptions for the semantics of each field.

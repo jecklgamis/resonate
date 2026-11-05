@@ -83,6 +83,34 @@ func NewFeeder(path, mode string) (*Feeder, error) {
 	return &Feeder{rows: rows, random: mode == "random"}, nil
 }
 
+// NewArrayFeeder builds a Feeder from rows given directly in code (or inline
+// YAML) instead of a file — the analogue of Gatling's array feeder. mode is
+// "sequential" (default, round-robin, wrapping) or "random"; "stream" makes
+// no sense for data already in memory and is rejected. rows is copied, so
+// the caller may reuse or mutate its slice afterward. Fails fast on an
+// empty row set or an invalid mode.
+func NewArrayFeeder(rows []map[string]string, mode string) (*Feeder, error) {
+	switch mode {
+	case "", "sequential", "random":
+	case "stream":
+		return nil, fmt.Errorf("feeder: mode \"stream\" is only for files; use \"sequential\" or \"random\" for inline rows")
+	default:
+		return nil, fmt.Errorf("feeder: invalid mode %q (want \"sequential\" or \"random\")", mode)
+	}
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("feeder: inline rows are empty")
+	}
+	cp := make([]map[string]string, len(rows))
+	for i, r := range rows {
+		m := make(map[string]string, len(r))
+		for k, v := range r {
+			m[k] = v
+		}
+		cp[i] = m
+	}
+	return &Feeder{rows: cp, random: mode == "random"}, nil
+}
+
 func loadCSVFeeder(path string) ([]map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {

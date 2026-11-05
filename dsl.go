@@ -521,6 +521,23 @@ func (s *Scenario) Feeder(path, mode string) *Scenario {
 	return s
 }
 
+// FeederRows is like Feeder but takes the rows directly (an array feeder)
+// instead of a file; mode is "sequential" (default) or "random". Errors
+// (empty rows, bad mode) are deferred to Build/Run.
+func (s *Scenario) FeederRows(rows []map[string]string, mode string) *Scenario {
+	f, err := NewArrayFeeder(rows, mode)
+	if err != nil {
+		s.deferErr(fmt.Errorf("resonate: FeederRows(%q): %w", mode, err))
+		return s
+	}
+	if s.ws != nil {
+		s.wsOpts.Feeder = f
+		return s
+	}
+	s.httpOpts.Feeder = f
+	return s
+}
+
 // Assert adds one or more assertions checked against the completed run's
 // report — the DSL equivalent of resonate run's scenario-file
 // assertions:/resonate hit's --assert. Run evaluates every accumulated

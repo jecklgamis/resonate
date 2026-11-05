@@ -1,0 +1,20 @@
+protocol: http
+
+load:
+  duration: 3s
+  rate: 10
+  workers: 5
+
+http:
+  timeout: 5s
+  feeder:
+    # Inline array feeder: rows given directly instead of a file.
+    mode: sequential # "sequential" (default) or "random"
+    rows:
+      - {email: alice@example.com, password: hunter2}
+      - {email: bob@example.com, password: hunter3}
+  targets:
+    - method: POST
+      url: "http://localhost:8080/login"
+      body: |
+        {"email": "{{.Feeder.email}}", "password": "{{.Feeder.password}}"}

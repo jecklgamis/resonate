@@ -55,10 +55,28 @@ uses [`examples/data/users.csv`](https://github.com/jecklgamis/resonate/blob/mai
 | `file`, `mode: sequential` (default) | A CSV/JSON file, loaded once | In file order, wrapping around | The whole file, in memory | Small and medium datasets |
 | `file`, `mode: random` | The same | Uniformly random, with replacement | The whole file, in memory | Sampling, when order doesn't matter |
 | `file`, `mode: stream` | A CSV/JSON file, read as the test runs | In file order, wrapping around | A small fixed buffer | Files too big for memory |
+| `rows` | Rows written inline in the YAML (or passed from Go) | In order, wrapping around; `mode: random` for random | The rows themselves | A handful of values, no file needed (an *array feeder*) |
 | `kafka` | A topic's messages | Per partition, in order | A small fixed buffer | Very large datasets, or data produced by another system |
 
-All four hand out rows from one source shared by every worker, so the dataset is spread across
+All of them hand out rows from one source shared by every worker, so the dataset is spread across
 the whole run rather than replayed separately by each worker.
+
+## Inline rows
+
+`rows` is an array feeder: the data lives in the scenario instead of a file. It is mutually
+exclusive with `file` and `kafka`, supports `mode: sequential` (default) or `random` (not
+`stream`), and must not be empty.
+
+```yaml
+http:
+  feeder:
+    rows:
+      - {email: alice@example.com, password: hunter2}
+      - {email: bob@example.com, password: hunter3}
+    mode: random
+```
+
+See [`examples/http-feeder-rows.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-feeder-rows.yaml).
 
 ## File feeders
 
@@ -279,6 +297,9 @@ scenario is [`examples/http-kafka-feeder.yaml`](https://github.com/jecklgamis/re
 // A file. mode is "sequential" (default), "random" or "stream".
 feeder, err := resonate.NewFeeder("users.csv", "sequential")
 
+// Or rows given directly (an array feeder). mode is "sequential" or "random".
+feeder, err := resonate.NewArrayFeeder([]map[string]string{{"id": "1"}, {"id": "2"}}, "sequential")
+
 // Or a Kafka topic.
 feeder, err := resonate.NewKafkaFeeder(resonate.KafkaFeederOptions{
 	Brokers: []string{"localhost:9092"},
@@ -291,7 +312,8 @@ Set it as `Feeder` on `HTTPOptions`, `WSOptions` or `GRPCOptions`, or as `HTTP.F
 is safe to call from many goroutines. Call `feeder.Close()` after the run has returned: it stops the
 background reader of a `stream` or Kafka feeder, and does nothing for the others.
 
-The fluent `Scenario` builder takes a file directly: `Feeder("users.csv", "sequential")`. A Kafka
+The fluent `Scenario` builder takes a file directly, `Feeder("users.csv", "sequential")`, or rows,
+`FeederRows(rows, "sequential")`. A Kafka
 feeder goes through the options structs above. See [Library](library.md).
 
 ## Troubleshooting

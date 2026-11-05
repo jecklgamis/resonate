@@ -570,10 +570,26 @@ func httpOptionsFrom(cfg config.HTTPConfig) (generator.HTTPOptions, error) {
 }
 
 // newFeeder builds the feeder a scenario's feeder: block describes: a
-// CSV/JSON file, or a Kafka topic. Exactly one source must be given.
+// CSV/JSON file, inline rows, or a Kafka topic. Exactly one source must be given.
 func newFeeder(cfg config.FeederConfig) (*generator.Feeder, error) {
 	if cfg.File != "" && cfg.Kafka != nil {
 		return nil, fmt.Errorf("set either file or kafka, not both")
+	}
+	sources := 0
+	if cfg.File != "" {
+		sources++
+	}
+	if len(cfg.Rows) > 0 {
+		sources++
+	}
+	if cfg.Kafka != nil {
+		sources++
+	}
+	if sources > 1 {
+		return nil, fmt.Errorf("set only one of file, rows or kafka")
+	}
+	if len(cfg.Rows) > 0 {
+		return generator.NewArrayFeeder(cfg.Rows, cfg.Mode)
 	}
 	if cfg.Kafka == nil {
 		return generator.NewFeeder(cfg.File, cfg.Mode)

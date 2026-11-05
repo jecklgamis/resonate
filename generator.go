@@ -164,3 +164,10 @@ type KafkaFeederOptions = generator.KafkaFeederOptions
 func NewKafkaFeeder(opts KafkaFeederOptions) (*Feeder, error) {
 	return generator.NewKafkaFeeder(opts)
 }
+
+// NewArrayFeeder builds a Feeder from rows given directly in Go instead of
+// a file (like Gatling's array feeder). mode is "sequential" (default) or
+// "random"; rows is copied.
+func NewArrayFeeder(rows []map[string]string, mode string) (*Feeder, error) {
+	return generator.NewArrayFeeder(rows, mode)
+}

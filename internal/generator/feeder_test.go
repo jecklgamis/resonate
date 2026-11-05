@@ -393,3 +393,53 @@ func TestNewFeederStreamServesEveryRowAfterValidation(t *testing.T) {
 		t.Errorf("after the last row got %q, want it to wrap to 0", got)
 	}
 }
+
+func TestNewArrayFeederSequentialWrapsAround(t *testing.T) {
+	f, err := NewArrayFeeder([]map[string]string{{"id": "1"}, {"id": "2"}}, "")
+	if err != nil {
+		t.Fatalf("NewArrayFeeder error: %v", err)
+	}
+	want := []string{"1", "2", "1"}
+	for i, w := range want {
+		if got := f.Next()["id"]; got != w {
+			t.Errorf("Next() #%d = %q, want %q", i, got, w)
+		}
+	}
+}
+
+func TestNewArrayFeederRandomStaysWithinRows(t *testing.T) {
+	f, err := NewArrayFeeder([]map[string]string{{"id": "1"}, {"id": "2"}}, "random")
+	if err != nil {
+		t.Fatalf("NewArrayFeeder error: %v", err)
+	}
+	for i := 0; i < 50; i++ {
+		if id := f.Next()["id"]; id != "1" && id != "2" {
+			t.Fatalf("Next() = %q, outside rows", id)
+		}
+	}
+}
+
+func TestNewArrayFeederRejectsBadInput(t *testing.T) {
+	rows := []map[string]string{{"id": "1"}}
+	if _, err := NewArrayFeeder(nil, ""); err == nil {
+		t.Error("expected error for empty rows")
+	}
+	if _, err := NewArrayFeeder(rows, "stream"); err == nil {
+		t.Error("expected error for stream mode")
+	}
+	if _, err := NewArrayFeeder(rows, "bogus"); err == nil {
+		t.Error("expected error for invalid mode")
+	}
+}
+
+func TestNewArrayFeederCopiesRows(t *testing.T) {
+	rows := []map[string]string{{"id": "1"}}
+	f, err := NewArrayFeeder(rows, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows[0]["id"] = "mutated"
+	if got := f.Next()["id"]; got != "1" {
+		t.Errorf("Next()[id] = %q after caller mutation, want 1", got)
+	}
+}

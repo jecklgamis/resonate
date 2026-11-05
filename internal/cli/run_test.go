@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1192,5 +1193,53 @@ func TestSchemaCommandRejectsArguments(t *testing.T) {
 	cmd.SetArgs([]string{"schema", "scenario.yaml"})
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("Execute schema with an argument should fail")
+	}
+}
+
+func TestRunCommandInlineFeederRows(t *testing.T) {
+	t.Chdir(t.TempDir())
+	var mu sync.Mutex
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	path := writeTempScenario(t, `
+protocol: http
+load:
+  requests: 3
+  workers: 1
+http:
+  feeder:
+    rows:
+      - {user: alice, n: 1}
+      - {user: bob, n: 2}
+  targets:
+    - method: POST
+      url: `+srv.URL+`
+      body: '{{.Feeder.user}}-{{.Feeder.n}}'
+`)
+	cmd := newRunCommand()
+	cmd.SetArgs([]string{path, "--quiet"})
+	var err error
+	captureStdout(t, func() { err = cmd.Execute() })
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	want := []string{"alice-1", "bob-2", "alice-1"}
+	if strings.Join(bodies, ",") != strings.Join(want, ",") {
+		t.Errorf("bodies = %v, want %v", bodies, want)
+	}
+}
+
+func TestBuildFeederFileAndRowsMutuallyExclusive(t *testing.T) {
+	_, err := newFeeder(config.FeederConfig{File: "x.csv", Rows: []map[string]string{{"a": "b"}}})
+	if err == nil {
+		t.Fatal("expected error when both file and rows are set")
 	}
 }
