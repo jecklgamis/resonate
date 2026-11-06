@@ -290,6 +290,48 @@ templating, metadata and auth, response checks, streaming, how results are
 reported, tuning, troubleshooting, and a runnable example server — is in the
 **[gRPC guide](grpc.md)**.
 
+## Per-Step Results
+
+An HTTP run is broken down per request: every target under `targets:` and every
+request in a `flow:` is a **step**, and the report shows each one's own requests, success
+rate and latency percentiles next to the run totals. Without it a flow reports one blended
+latency distribution, so a slow `checkout` hides behind a fast `login`.
+
+A step is labelled with its `name:`, or `METHOD url` when it has none (the query string
+and any credentials in the URL are left out, so a label never carries a secret; a templated
+URL keeps its `{{ }}` source, so `GET /users/{{.Vars.id}}` is one step, not one per user).
+Requests that share a label are reported together.
+
+```yaml
+protocol: http
+load:
+  duration: 30s
+  rate: 20
+  workers: 10
+http:
+  base_url: http://localhost:8080
+  flow:
+    - name: login
+      method: POST
+      url: /login
+      extract:
+        token: json:token
+    - name: browse
+      url: /items
+      headers:
+        Authorization: "Bearer {{.Vars.token}}"
+    - name: checkout
+      method: POST
+      url: /checkout
+      headers:
+        Authorization: "Bearer {{.Vars.token}}"
+```
+
+The stdout summary lists the steps once there are two or more, the HTML report gets a
+*Steps* table, and the JSON report gains a `steps` array. A `repeat`/`during`/`if` block can't
+have a name; name the requests inside it. Setup steps are not reported (their results never
+are), and WebSocket, SSE and gRPC scenarios have no per-step breakdown.
+
 ## Assertions
 
 A top-level `assertions:` list checks metrics from the completed
@@ -347,3 +389,56 @@ assertions:
 
 An unknown metric name, or an entry with no condition set, is rejected
 at load time.
+
+### Asserting on one step
+
+Add `step:` to scope an assertion to a single step instead of the whole run; the metric is
+then computed over just that step's requests. The name must be one of the scenario's steps
+(its `name:`, or the default `METHOD url` label), and a typo is rejected before the run
+starts rather than after it. A step that made no requests fails its assertion rather than
+passing vacuously. HTTP scenarios only.
+
+```yaml
+assertions:
+  - metric: latency_p95
+    step: login
+    max: 300ms
+
+  - metric: success_rate
+    step: checkout
+    min: "0.995"
+```
+
+Failures name the step: `latency_p95{step=login}: got 412ms, want <= 300ms`.
+
+### Stopping a run early
+
+An assertion with `abort: true` stops the run as soon as it fails while the run is still
+going, instead of waiting for the end: a dead server or a blown latency budget needn't burn
+the rest of a ten-minute test. The run still prints its report (for the part that ran, with
+`ABORTED` and the reason), writes the HTML/JSON reports with `aborted` set, and exits
+non-zero.
+
+```yaml
+assertions:
+  - metric: success_rate
+    min: "0.95"
+    abort: true
+    abort_after: 10s       # let the run warm up first (default 5s)
+
+  - metric: latency_p99
+    step: checkout
+    max: 2s
+    abort: true
+```
+
+The assertion is checked about once a second against the results so far (the same cumulative
+numbers the final check uses), and only once `abort_after` has elapsed, because the first few
+requests make for noisy percentiles and a jumpy success rate. `abort_after` defaults to `5s`; set
+it above your ramp-up if the run starts slowly. `rate` is also computed over the whole run so
+far, so under `stages` give it an `abort_after` past the ramp. `abort` is not allowed on
+`requests` or `success`: a count can only be judged once the run has ended.
+
+Requests still in flight when the run is stopped are discarded rather than reported, so the
+report has no burst of `context canceled` errors from the stop itself.
+

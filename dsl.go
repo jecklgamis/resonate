@@ -45,12 +45,31 @@ type Scenario struct {
 	ws     *WSTarget
 	wsOpts WSOptions
 	curMsg *WSMessage
+
+	// sse is non-nil once SSE is called, switching the Scenario to build an
+	// SSEGenerator. SSE is plain HTTP underneath, so it shares httpOpts (and
+	// the stepRef-based Method/Header/Query/Body setters) with the HTTP modes.
+	sse *SSETarget
+
+	// grpc is non-nil once GRPC is called, switching the Scenario to build a
+	// GRPCGenerator. grpcOpts holds its connection options; curCall points at
+	// the GRPCCall most recently appended by Call, the gRPC analogue of
+	// curMsg/cur. See dsl_protocols.go.
+	grpc     *GRPCTarget
+	grpcOpts GRPCOptions
+	curCall  *GRPCCall
+
+	// httpOnly records the HTTP-transport-only setters that were called
+	// (H2C, MaxIdleConns, ...), so Build can reject them on a WebSocket or
+	// gRPC scenario no matter which order they were called in.
+	httpOnly []string
 }
 
 // stepRef lets Header/Query/Body/Expect*/Extract/Pause mutate "whichever
 // request is currently being built" — the last HTTPTarget or FlowStep
 // appended — without duplicating those setters once per underlying type.
 type stepRef struct {
+	name          *string
 	method        *string
 	url           *string
 	query         *map[string]string
@@ -67,7 +86,7 @@ type stepRef struct {
 
 func targetRef(t *HTTPTarget) *stepRef {
 	return &stepRef{
-		method: &t.Method, url: &t.URL,
+		name: &t.Name, method: &t.Method, url: &t.URL,
 		query: &t.Query, header: &t.Header, body: &t.Body, rawBody: &t.RawBody,
 		expectStatus: &t.ExpectStatus, expectHeaders: &t.ExpectHeaders, expectBody: &t.ExpectBody,
 	}
@@ -75,7 +94,7 @@ func targetRef(t *HTTPTarget) *stepRef {
 
 func flowStepRef(fs *FlowStep) *stepRef {
 	return &stepRef{
-		method: &fs.Method, url: &fs.URL,
+		name: &fs.Name, method: &fs.Method, url: &fs.URL,
 		query: &fs.Query, header: &fs.Header, body: &fs.Body, rawBody: &fs.RawBody,
 		expectStatus: &fs.ExpectStatus, expectHeaders: &fs.ExpectHeaders, expectBody: &fs.ExpectBody,
 		extract: &fs.Extract, pause: &fs.Pause, pauseMax: &fs.PauseMax,
@@ -224,10 +243,29 @@ func (s *Scenario) Put(url string) *Scenario    { return s.Method("PUT", url) }
 func (s *Scenario) Patch(url string) *Scenario  { return s.Method("PATCH", url) }
 func (s *Scenario) Delete(url string) *Scenario { return s.Method("DELETE", url) }
 
+// Name labels the current target or step in the report's per-step breakdown
+// and in step-scoped assertions (Assertion.Step). Without one a request is
+// labelled "METHOD url" with the query string stripped. Requests sharing a
+// name are reported together. It has no meaning for a WebSocket scenario,
+// which isn't broken down by step; calling it after WS is a Build/Run error.
+func (s *Scenario) Name(name string) *Scenario {
+	if p := s.nonHTTPStepProtocol(); p != "" {
+		s.deferErr(fmt.Errorf("resonate: Name(%q): a %s scenario has no per-step breakdown", name, p))
+		return s
+	}
+	s.ensureCurrent()
+	*s.cur.name = name
+	return s
+}
+
 // Header sets a request header (HTTPTarget/FlowStep) or, once WS has been
 // called, a WebSocket connection header (WSMessage has no headers of its
 // own — WS connection headers are set once, before any Message calls).
 func (s *Scenario) Header(key, value string) *Scenario {
+	if s.grpc != nil {
+		s.deferErr(fmt.Errorf("resonate: Header(%q): gRPC sends metadata, not headers — use Metadata", key))
+		return s
+	}
 	if s.ws != nil {
 		if s.ws.Header == nil {
 			s.ws.Header = map[string]string{}
@@ -318,12 +356,20 @@ func (s *Scenario) deferErr(err error) {
 
 func (s *Scenario) ExpectStatus(codes ...int) *Scenario {
 	s.ensureCurrent()
+	if s.cur.expectStatus == nil {
+		s.deferErr(fmt.Errorf("resonate: ExpectStatus doesn't apply to %s", s.describeMode()))
+		return s
+	}
 	*s.cur.expectStatus = codes
 	return s
 }
 
 func (s *Scenario) ExpectHeader(key, value string) *Scenario {
 	s.ensureCurrent()
+	if s.cur.expectHeaders == nil {
+		s.deferErr(fmt.Errorf("resonate: ExpectHeader doesn't apply to %s", s.describeMode()))
+		return s
+	}
 	if *s.cur.expectHeaders == nil {
 		*s.cur.expectHeaders = map[string]string{}
 	}
@@ -347,7 +393,14 @@ func (s *Scenario) ExpectBody(rule, value string) *Scenario {
 		s.curMsg.ExpectBody[rule] = value
 		return s
 	}
+	if s.grpc != nil {
+		return s.grpcExpectBody(rule, value)
+	}
 	s.ensureCurrent()
+	if s.cur.expectBody == nil {
+		s.deferErr(fmt.Errorf("resonate: ExpectBody doesn't apply to %s", s.describeMode()))
+		return s
+	}
 	if *s.cur.expectBody == nil {
 		*s.cur.expectBody = map[string]string{}
 	}
@@ -371,6 +424,9 @@ func (s *Scenario) Extract(name, rule string) *Scenario {
 		}
 		s.curMsg.Extract[name] = rule
 		return s
+	}
+	if s.grpc != nil {
+		return s.grpcExtract(name, rule)
 	}
 	s.ensureCurrent()
 	if s.cur.extract == nil {
@@ -416,7 +472,7 @@ func (s *Scenario) PauseRange(min, max time.Duration) *Scenario {
 // BaseURL is meaningless for a WS scenario (WSOptions has no BaseURL) — a
 // no-op once WS has been called.
 func (s *Scenario) BaseURL(url string) *Scenario {
-	if s.ws != nil {
+	if s.ws != nil || s.grpc != nil {
 		return s
 	}
 	s.httpOpts.BaseURL = url
@@ -424,6 +480,10 @@ func (s *Scenario) BaseURL(url string) *Scenario {
 }
 
 func (s *Scenario) Timeout(d time.Duration) *Scenario {
+	if s.grpc != nil {
+		s.grpcOpts.Timeout = d
+		return s
+	}
 	if s.ws != nil {
 		s.wsOpts.Timeout = d
 		return s
@@ -433,6 +493,10 @@ func (s *Scenario) Timeout(d time.Duration) *Scenario {
 }
 
 func (s *Scenario) Insecure() *Scenario {
+	if s.grpc != nil {
+		s.grpcOpts.Insecure = true
+		return s
+	}
 	if s.ws != nil {
 		s.wsOpts.Insecure = true
 		return s
@@ -451,6 +515,7 @@ func (s *Scenario) HTTP3() *Scenario {
 		s.deferErr(fmt.Errorf("resonate: HTTP3 doesn't apply to a WebSocket scenario"))
 		return s
 	}
+	s.httpOnly = append(s.httpOnly, "HTTP3")
 	s.httpOpts.HTTP3 = true
 	return s
 }
@@ -513,12 +578,7 @@ func (s *Scenario) Feeder(path, mode string) *Scenario {
 		s.deferErr(fmt.Errorf("resonate: Feeder(%q, %q): %w", path, mode, err))
 		return s
 	}
-	if s.ws != nil {
-		s.wsOpts.Feeder = f
-		return s
-	}
-	s.httpOpts.Feeder = f
-	return s
+	return s.setFeeder(f)
 }
 
 // FeederRows is like Feeder but takes the rows directly (an array feeder)
@@ -530,12 +590,7 @@ func (s *Scenario) FeederRows(rows []map[string]string, mode string) *Scenario {
 		s.deferErr(fmt.Errorf("resonate: FeederRows(%q): %w", mode, err))
 		return s
 	}
-	if s.ws != nil {
-		s.wsOpts.Feeder = f
-		return s
-	}
-	s.httpOpts.Feeder = f
-	return s
+	return s.setFeeder(f)
 }
 
 // Assert adds one or more assertions checked against the completed run's
@@ -568,7 +623,11 @@ func (s *Scenario) WS(url string) *Scenario {
 // order. Subsequent Wait/Binary/Extract/ExpectBody calls apply to this
 // message until the next Message call. Only meaningful after WS.
 func (s *Scenario) Message(body string) *Scenario {
+	if s.grpc != nil {
+		return s.grpcMessage(body)
+	}
 	if s.ws == nil {
+		s.deferErr(fmt.Errorf("resonate: Message only applies after WS or Call (gRPC); this scenario is %s", s.describeMode()))
 		return s
 	}
 	s.ws.Messages = append(s.ws.Messages, WSMessage{Body: body})
@@ -581,6 +640,7 @@ func (s *Scenario) Message(body string) *Scenario {
 // have anything to check. Only meaningful after Message.
 func (s *Scenario) Wait() *Scenario {
 	if s.curMsg == nil {
+		s.deferErr(fmt.Errorf("resonate: Wait needs a WebSocket Message to apply to (call WS, then Message); this scenario is %s", s.describeMode()))
 		return s
 	}
 	s.curMsg.Wait = true
@@ -591,6 +651,7 @@ func (s *Scenario) Wait() *Scenario {
 // meaningful after Message.
 func (s *Scenario) Binary() *Scenario {
 	if s.curMsg == nil {
+		s.deferErr(fmt.Errorf("resonate: Binary needs a WebSocket Message to apply to (call WS, then Message); this scenario is %s", s.describeMode()))
 		return s
 	}
 	s.curMsg.Binary = true
@@ -601,21 +662,22 @@ func (s *Scenario) Binary() *Scenario {
 // Generator, without running it — for callers who want the Generator
 // itself (e.g. to pass to their own retry/orchestration logic) rather than
 // calling Run directly. Returns an *HTTPGenerator if the Scenario only
-// used Target (or the default single implicit target), or an
-// *FlowGenerator if it used Step/Setup.
+// used Target (or the default single implicit target), an *FlowGenerator
+// if it used Step/Setup, or a *WSGenerator / *SSEGenerator / *GRPCGenerator
+// after WS / SSE / GRPC. A Scenario is one protocol: mixing them is an error.
 func (s *Scenario) Build() (Generator, error) {
 	if s.buildErr != nil {
 		return nil, s.buildErr
 	}
-	if s.ws != nil && s.httpOpts.HTTP3 {
-		// HTTP3() ahead of WS(): the method itself couldn't know yet.
-		return nil, fmt.Errorf("resonate: HTTP3 doesn't apply to a WebSocket scenario")
-	}
 	isFlow := len(s.flow) > 0 || len(s.setup) > 0
-	if s.ws != nil && (isFlow || len(s.targets) > 0) {
-		return nil, fmt.Errorf("resonate: scenario mixes WS with Target/Step/Setup — use one or the other, not both")
+	if err := s.checkModes(isFlow); err != nil {
+		return nil, err
 	}
-	if s.ws != nil {
+	if err := s.checkHTTPOnly(); err != nil {
+		return nil, err
+	}
+	switch {
+	case s.ws != nil:
 		for i, m := range s.ws.Messages {
 			if !m.Wait && (len(m.Extract) > 0 || len(m.ExpectBody) > 0) {
 				return nil, fmt.Errorf("resonate: message %d has Extract/ExpectBody but no Wait — there's no response to check", i)
@@ -623,15 +685,17 @@ func (s *Scenario) Build() (Generator, error) {
 		}
 		s.wsOpts.Identities = s.identities
 		return NewWSGenerator(*s.ws, s.wsOpts)
-	}
-	if isFlow && len(s.targets) > 0 {
-		return nil, fmt.Errorf("resonate: scenario mixes Target (or an implicit Get/Post/... target) with Step/Setup — use one or the other, not both")
+	case s.sse != nil:
+		return NewSSEGenerator(*s.sse, SSEOptions{HTTP: s.httpOpts, Identities: s.identities})
+	case s.grpc != nil:
+		s.grpcOpts.Identities = s.identities
+		return NewGRPCGenerator(*s.grpc, s.grpcOpts)
 	}
 	if isFlow {
 		return NewFlowGenerator(s.flow, s.setup, FlowOptions{HTTP: s.httpOpts, Identities: s.identities})
 	}
 	if len(s.targets) == 0 {
-		return nil, fmt.Errorf("resonate: scenario has no request configured (call Get/Post/Target/Step/Setup/WS first)")
+		return nil, fmt.Errorf("resonate: scenario has no request configured (call Get/Post/Target/Step/Setup/WS/SSE/GRPC first)")
 	}
 	return NewHTTPGenerator(s.targets, s.httpOpts)
 }
@@ -648,7 +712,31 @@ func (s *Scenario) Run(ctx context.Context) (Summary, error) {
 		return Summary{}, err
 	}
 	defer gen.Close()
-	summary := Run(ctx, gen, s.opts)
+
+	// Per-step assertions must name a step this scenario has, and assertions
+	// marked Abort are handed to the engine to watch while the run is going.
+	sn, hasSteps := gen.(interface{ StepNames() []string })
+	var known []string
+	if hasSteps {
+		known = sn.StepNames()
+	}
+	if err := ValidateSteps(s.assertions, known, hasSteps); err != nil {
+		return Summary{}, fmt.Errorf("resonate: %w", err)
+	}
+	opts := s.opts
+	for _, a := range s.assertions {
+		if a.Abort {
+			opts.AbortOn = append(opts.AbortOn, a)
+		}
+	}
+	if err := ValidateAbort(opts.AbortOn); err != nil {
+		return Summary{}, fmt.Errorf("resonate: %w", err)
+	}
+
+	summary := Run(ctx, gen, opts)
+	if summary.Aborted != "" {
+		return summary, fmt.Errorf("resonate: run aborted: %s", summary.Aborted)
+	}
 	if len(s.assertions) == 0 {
 		return summary, nil
 	}

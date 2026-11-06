@@ -507,10 +507,10 @@ Most problems show up at `--dry-run` or at load time, before any load is sent.
 
 ## From Go
 
-gRPC is available through the library's struct API (`resonate.NewGRPCGenerator`,
-`GRPCTarget`, `GRPCCall`, `GRPCOptions`), with every field described on this
-page. The fluent `Scenario` builder has no gRPC methods. See
-[Library](library.md#grpc) for a worked example.
+gRPC is available through the fluent `Scenario` builder (`GRPC(address)`, then `Call(method)` and
+its `Message`/`Receive`/`Metadata`/... setters) and through the struct API
+(`resonate.NewGRPCGenerator`, `GRPCTarget`, `GRPCCall`, `GRPCOptions`), with every field
+described on this page. See [Library](library.md#grpc) for worked examples of both.
 
 ## The example server
 
@@ -614,7 +614,6 @@ iterations/s, each a `Put` then a `Get` of the same key, and gates the run on
 
 - **`resonate hit` has no gRPC flags;** gRPC is scenario-file (and library) only,
   like WebSocket.
-- **The fluent `Scenario` builder has no gRPC methods;** use the struct API.
 - **gRPC-Web and the Connect protocol** are not spoken. A Connect or grpc-gateway
   server's unary JSON endpoints can be hit as ordinary HTTP.
 - **Bidirectional calls aren't lockstep:** sends and receives run concurrently.

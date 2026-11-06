@@ -99,6 +99,10 @@
     </div>
   </div>
 
+  {{if .S.Aborted}}
+  <div class="panel"><span class="badge fail">ABORTED</span> {{.S.Aborted}}</div>
+  {{end}}
+
   {{if .Settings}}
   <h2>Run settings</h2>
   <div class="panel">
@@ -116,7 +120,7 @@
       <tbody>
       {{range .AssertionResults}}
         <tr>
-          <td>{{.Metric}}</td>
+          <td>{{.Label}}</td>
           <td>{{if .Passed}}<span class="badge pass">PASS</span>{{else}}<span class="badge fail">FAIL</span>{{end}}</td>
           <td>{{.Detail}}</td>
         </tr>
@@ -161,6 +165,28 @@
       </tbody>
     </table>
   </div>
+
+  {{if gt (len .S.Steps) 1}}
+  <h2>Steps</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Step</th><th class="num">Requests</th><th class="num">Success</th><th class="num">p50</th><th class="num">p95</th><th class="num">p99</th><th class="num">Max</th></tr></thead>
+      <tbody>
+      {{range .S.Steps}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td class="num">{{.Requests}}</td>
+          <td class="num">{{printf "%.1f%%" (mul100 .SuccessRate)}}</td>
+          <td class="num">{{roundUs .Latencies.P50}}</td>
+          <td class="num">{{roundUs .Latencies.P95}}</td>
+          <td class="num">{{roundUs .Latencies.P99}}</td>
+          <td class="num">{{roundUs .Latencies.Max}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
 
   {{if .StatusCodes}}
   <h2>Status codes</h2>

@@ -32,6 +32,18 @@ type Scenario struct {
 type AssertionConfig struct {
 	Metric string `yaml:"metric"`
 
+	// Step scopes the assertion to one named target or flow step (its
+	// name:, or "METHOD url" when unnamed) instead of the whole run. HTTP
+	// scenarios only; the name must match a step in the scenario.
+	Step string `yaml:"step"`
+
+	// Abort stops the run as soon as this assertion fails while it is still
+	// going, rather than at the end. AbortAfter (a duration, default 5s) is
+	// how long to let the run warm up before the assertion may trip it.
+	// Not valid on the requests/success metrics.
+	Abort      bool   `yaml:"abort"`
+	AbortAfter string `yaml:"abort_after"`
+
 	// Min/Max: actual >= Min / actual <= Max.
 	Min string `yaml:"min"`
 	Max string `yaml:"max"`
@@ -271,6 +283,11 @@ type KafkaFeederConfig struct {
 // never both; control-flow blocks are only meaningful under flow/setup,
 // not targets. See internal/generator.FlowStep for the exact semantics.
 type HTTPTargetConfig struct {
+	// Name labels this request in the report's per-step breakdown and in
+	// step-scoped assertions. Optional: defaults to "METHOD url" (query
+	// string stripped). Not valid on a repeat/during/if entry.
+	Name string `yaml:"name"`
+
 	Method   string            `yaml:"method"`
 	URL      string            `yaml:"url"`
 	Query    map[string]string `yaml:"query"`

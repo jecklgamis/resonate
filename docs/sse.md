@@ -348,10 +348,10 @@ Most problems show up at `--dry-run` or when the scenario loads.
 
 ## From Go
 
-SSE is available through the library's struct API (`resonate.NewSSEGenerator`,
-`SSETarget`, `SSEOptions`), with every field described on this page. The fluent
-`Scenario` builder has no SSE methods. See [Library](library.md#server-sent-events)
-for a worked example.
+SSE is available through the fluent `Scenario` builder (`SSE(method, url)`, then `Events`/
+`StreamDuration` and the usual request setters) and through the struct API
+(`resonate.NewSSEGenerator`, `SSETarget`, `SSEOptions`), with every field described on this
+page. See [Library](library.md#server-sent-events) for worked examples of both.
 
 ## The example server
 
@@ -411,7 +411,6 @@ doing and doesn't. Ctrl-C prints the totals and shuts down.
 ## Not supported
 
 - **`resonate hit` has no SSE flags;** SSE is scenario-file (and library) only.
-- **The fluent `Scenario` builder has no SSE methods;** use the struct API.
 - **No checks or extraction on event contents.** `expect_body` and `extract` work on
   HTTP responses, not on SSE events, and there is no filter on event names.
 - **No reconnecting and no `Last-Event-ID`:** a dropped stream is a finished (or failed)

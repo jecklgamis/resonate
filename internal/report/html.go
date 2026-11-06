@@ -80,6 +80,7 @@ type htmlData struct {
 
 type assertionResult struct {
 	Assertion
+	Label  string // metric, or metric{step=name}
 	Passed bool
 	Detail string
 }
@@ -100,17 +101,21 @@ func assertionResults(s Summary, assertions []Assertion, failures []Failure) []a
 	}
 	failed := make(map[string]bool, len(failures))
 	for _, f := range failures {
-		failed[f.Metric] = true
+		failed[assertionLabel(f.Metric, f.Step)] = true
 	}
 	results := make([]assertionResult, 0, len(assertions))
 	for _, a := range assertions {
-		actual, err := s.metricValue(a.Metric)
+		actual, ok, err := s.assertionValue(a)
 		if err != nil {
 			continue
 		}
-		isFailed := failed[a.Metric]
-		detail := Failure{Metric: a.Metric, Actual: actual, Reasons: a.describe()}.String()
-		results = append(results, assertionResult{Assertion: a, Passed: !isFailed, Detail: detail})
+		label := assertionLabel(a.Metric, a.Step)
+		isFailed := failed[label] || !ok
+		detail := Failure{Metric: a.Metric, Step: a.Step, Actual: actual, Reasons: a.describe()}.String()
+		if !ok {
+			detail = fmt.Sprintf("%s: step %q recorded no requests", label, a.Step)
+		}
+		results = append(results, assertionResult{Assertion: a, Label: label, Passed: !isFailed, Detail: detail})
 	}
 	return results
 }

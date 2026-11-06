@@ -121,7 +121,15 @@ func runAndReport(a generator.Generator, opts engine.Options, out runOpts) error
 		}
 	}
 
-	return reportAssertionFailures(failures, len(out.Assertions))
+	failErr := reportAssertionFailures(failures, len(out.Assertions))
+	if summary.Aborted != "" {
+		// The stop is the headline: the final check usually fails on the same
+		// numbers, but "3 assertion(s) failed" says nothing about why the run
+		// ended early. The failures were still printed above, and the report
+		// itself carries an ABORTED line.
+		return fmt.Errorf("run aborted: %s", summary.Aborted)
+	}
+	return failErr
 }
 
 // resultsWriter appends one JSON object per generator.Result (JSON Lines) to a

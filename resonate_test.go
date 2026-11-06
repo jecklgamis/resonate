@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -311,5 +312,95 @@ func TestArrayFeederViaFacade(t *testing.T) {
 	}
 	if _, err := resonate.NewScenario().Get("http://localhost:1").FeederRows(nil, "").Build(); err == nil {
 		t.Error("FeederRows(nil) should fail at Build")
+	}
+}
+
+func f64(v float64) *float64 { return &v }
+
+func statusServer(t *testing.T, status int) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestScenarioNamesStepsAndAssertsPerStep(t *testing.T) {
+	srv := statusServer(t, http.StatusOK)
+	summary, err := resonate.NewScenario().
+		Step("GET", srv.URL+"/a").Name("first").
+		Step("GET", srv.URL+"/b").Name("second").
+		Requests(6).Workers(2).
+		Assert(resonate.Assertion{Metric: "success_rate", Step: "second", Min: f64(1)}).
+		Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if len(summary.Steps) != 2 || summary.Steps[0].Name != "first" || summary.Steps[1].Name != "second" {
+		t.Fatalf("Steps = %+v, want first then second", summary.Steps)
+	}
+	var _ resonate.StepSummary = summary.Steps[0]
+	if summary.Steps[0].Requests != 6 {
+		t.Errorf("first step requests = %d, want 6", summary.Steps[0].Requests)
+	}
+}
+
+func TestScenarioStepAssertionFailureNamesTheStep(t *testing.T) {
+	srv := statusServer(t, http.StatusOK)
+	_, err := resonate.NewScenario().
+		Get(srv.URL).Name("home").
+		Requests(3).Workers(1).
+		Assert(resonate.Assertion{Metric: "requests", Step: "home", Min: f64(100)}).
+		Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "requests{step=home}") {
+		t.Errorf("err = %v, want the failure to name the step", err)
+	}
+}
+
+func TestScenarioRunRejectsAssertionOnUnknownStep(t *testing.T) {
+	srv := statusServer(t, http.StatusOK)
+	_, err := resonate.NewScenario().
+		Get(srv.URL).Name("home").
+		Requests(3).Workers(1).
+		Assert(resonate.Assertion{Metric: "success_rate", Step: "hmoe", Min: f64(1)}).
+		Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `unknown step "hmoe"`) {
+		t.Errorf("err = %v, want a typo'd step rejected before the run", err)
+	}
+}
+
+func TestScenarioNameOnWebSocketIsABuildError(t *testing.T) {
+	if _, err := resonate.NewScenario().WS("ws://localhost:1/").Name("x").Build(); err == nil {
+		t.Error("Name on a WebSocket scenario should fail at Build")
+	}
+}
+
+func TestScenarioAbortAssertionStopsTheRun(t *testing.T) {
+	srv := statusServer(t, http.StatusInternalServerError)
+	start := time.Now()
+	summary, err := resonate.NewScenario().
+		Get(srv.URL).
+		Duration(time.Minute).Workers(2).
+		Assert(resonate.Assertion{Metric: "success_rate", Min: f64(0.9), Abort: true}).
+		Run(context.Background())
+	if time.Since(start) > 20*time.Second {
+		t.Fatalf("a failing 1m run took %s; AbortAfter is 0 for the library, so it should stop on the first check", time.Since(start))
+	}
+	if err == nil || !strings.Contains(err.Error(), "aborted") {
+		t.Errorf("err = %v, want an aborted error", err)
+	}
+	if summary.Aborted == "" || summary.Requests == 0 {
+		t.Errorf("summary = aborted %q, %d requests; want what ran before the stop", summary.Aborted, summary.Requests)
+	}
+}
+
+func TestScenarioRejectsAbortOnACount(t *testing.T) {
+	srv := statusServer(t, http.StatusOK)
+	_, err := resonate.NewScenario().Get(srv.URL).Requests(1).
+		Assert(resonate.Assertion{Metric: "requests", Min: f64(1), Abort: true}).
+		Run(context.Background())
+	if err == nil {
+		t.Error("an abort assertion on a count can never be judged mid-run and must be rejected")
 	}
 }

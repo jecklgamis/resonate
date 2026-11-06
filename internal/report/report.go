@@ -49,6 +49,12 @@ type Aggregator struct {
 	bytesOut  int64
 	first     time.Time
 	last      time.Time
+
+	// steps is the per-step breakdown, keyed by Result.Step; stepOrder is the
+	// order the report lists them in: the configured order when SetStepOrder
+	// was given one, with any other step after it in first-seen order.
+	steps     map[string]*stepAgg
+	stepOrder []string
 }
 
 func NewAggregator() *Aggregator {
@@ -56,7 +62,16 @@ func NewAggregator() *Aggregator {
 		latencies: newLatencyHist(),
 		codes:     make(map[int]int),
 		errors:    make(map[string]int),
+		steps:     make(map[string]*stepAgg),
 	}
+}
+
+// SetStepOrder fixes the order steps are listed in to the scenario's own,
+// instead of the order their first results happened to arrive in — which for
+// round-robin targets run concurrently is arbitrary. Steps that never make a
+// request are still left out. Call it before Add.
+func (a *Aggregator) SetStepOrder(names []string) {
+	a.stepOrder = slices.Clone(names)
 }
 
 func (a *Aggregator) Add(r generator.Result) {
@@ -71,6 +86,18 @@ func (a *Aggregator) Add(r generator.Result) {
 	a.bytesIn += r.BytesIn
 	a.bytesOut += r.BytesOut
 	a.points = append(a.points, point{t: r.Timestamp, latency: r.Latency, success: r.Success()})
+
+	if r.Step != "" {
+		st, ok := a.steps[r.Step]
+		if !ok {
+			st = newStepAgg()
+			a.steps[r.Step] = st
+			if !slices.Contains(a.stepOrder, r.Step) {
+				a.stepOrder = append(a.stepOrder, r.Step)
+			}
+		}
+		st.add(r)
+	}
 
 	if r.Error != nil {
 		a.errors[r.Error.Error()]++
@@ -106,6 +133,16 @@ type Summary struct {
 	Latencies   LatencyStats   `json:"latencies"`
 	StatusCodes map[int]int    `json:"status_codes,omitempty"`
 	Errors      map[string]int `json:"errors,omitempty"`
+
+	// Steps breaks the run down per named target/flow step, in the scenario's
+	// order (see Aggregator.SetStepOrder). Empty for protocols that don't name
+	// their requests.
+	Steps []StepSummary `json:"steps,omitempty"`
+
+	// Aborted, if set, is why the run was stopped early: an assertion marked
+	// abort that failed while the run was still going (see Assertion.Abort).
+	// The numbers cover only what ran before the stop.
+	Aborted string `json:"aborted,omitempty"`
 
 	// TimeSeries and LatencyHistogram are extra breakdowns kept mainly for
 	// WriteHTML's charts; they're populated whenever there's at least one
@@ -166,6 +203,20 @@ type HistogramBin struct {
 // duration of the run (preferred over first/last timestamp deltas when the
 // caller has it, since it isn't skewed by in-flight requests at cutoff).
 func (a *Aggregator) Summary(wallClock time.Duration) Summary {
+	summary := a.Snapshot(wallClock)
+	dur := summary.Duration
+	summary.TimeSeries = bucketSeries(a.points, a.first, dur)
+	summary.LatencyHistogram = latencyHistogram(a.latencies, a.minLat, a.maxLat)
+	return summary
+}
+
+// Snapshot is Summary without the time series and histogram bins — the
+// headline numbers, per-step breakdown and percentiles, which is all an
+// assertion needs. It is cheap enough to call every second during a run
+// (Summary's time series sorts every result's latency), which is how
+// abort-on-threshold checks a run while it is still going. Like every
+// Aggregator method it must not race with Add.
+func (a *Aggregator) Snapshot(wallClock time.Duration) Summary {
 	errCount := 0
 	for _, c := range a.errors {
 		errCount += c
@@ -196,8 +247,11 @@ func (a *Aggregator) Summary(wallClock time.Duration) Summary {
 		summary.hist = a.latencies
 		summary.Latencies = latencyStats(a.latencies, a.minLat, a.maxLat)
 	}
-	summary.TimeSeries = bucketSeries(a.points, a.first, dur)
-	summary.LatencyHistogram = latencyHistogram(a.latencies, a.minLat, a.maxLat)
+	for _, name := range a.stepOrder {
+		if st, ok := a.steps[name]; ok { // a configured step may not have made a request yet
+			summary.Steps = append(summary.Steps, st.summary(name, dur))
+		}
+	}
 	return summary
 }
 
@@ -354,6 +408,7 @@ func (s Summary) Print(w io.Writer) {
 		s.Latencies.Max.Round(time.Microsecond),
 	)
 	fmt.Fprintf(w, "Bytes         [in, out]                %d, %d\n", s.BytesIn, s.BytesOut)
+	s.printSteps(w)
 	if len(s.StatusCodes) > 0 {
 		fmt.Fprintf(w, "Status Codes  [code:count]             ")
 		codes := make([]int, 0, len(s.StatusCodes))
@@ -374,6 +429,9 @@ func (s Summary) Print(w io.Writer) {
 		for msg, count := range s.Errors {
 			fmt.Fprintf(w, "  [%d]  %s\n", count, msg)
 		}
+	}
+	if s.Aborted != "" {
+		fmt.Fprintf(w, "ABORTED: %s\n", s.Aborted)
 	}
 	if s.Saturated {
 		fmt.Fprintf(w, "warning: target rate could not always be sustained — peak concurrency hit %d in-flight iterations; raise --max-workers to open more headroom\n", s.PeakConcurrency)

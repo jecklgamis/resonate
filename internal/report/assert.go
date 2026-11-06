@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/HdrHistogram/hdrhistogram-go"
 )
 
 // Assertion checks one metric of a completed Summary against one or more
@@ -16,6 +18,22 @@ import (
 // responsible for converting durations like "500ms" to seconds first.
 type Assertion struct {
 	Metric string
+
+	// Step, if set, scopes the assertion to the named target/flow step
+	// (Result.Step) instead of the whole run: Metric is then computed over
+	// just that step's requests. A step that made no requests fails the
+	// assertion rather than passing vacuously.
+	Step string
+
+	// Abort stops the run as soon as this assertion fails while it is still
+	// going, instead of waiting for the end — a dead server or a blown
+	// latency budget need not burn the whole duration. It is checked about
+	// once a second against the results so far (the same cumulative numbers
+	// the final check uses), and only once AbortAfter has elapsed, since the
+	// first few requests make for noisy percentiles. Not allowed on metrics
+	// that can only be judged at the end (requests, success).
+	Abort      bool
+	AbortAfter time.Duration
 
 	// Min/Max require actual >= Min / actual <= Max; both set together
 	// is an inclusive between(min, max).
@@ -154,12 +172,22 @@ func containsFloat(vs []float64, v float64) bool {
 // Failure describes one assertion that didn't hold.
 type Failure struct {
 	Metric  string
+	Step    string // set for a step-scoped assertion
 	Actual  float64
 	Reasons []string // one entry per condition set on the assertion (see Assertion.describe)
 }
 
+// label names the assertion's subject: "latency_p95", or
+// "latency_p95{step=login}" for a step-scoped one.
+func assertionLabel(metric, step string) string {
+	if step == "" {
+		return metric
+	}
+	return fmt.Sprintf("%s{step=%s}", metric, step)
+}
+
 func (f Failure) String() string {
-	return fmt.Sprintf("%s: got %s, %s", f.Metric, formatMetricValue(f.Metric, f.Actual), strings.Join(f.Reasons, "; "))
+	return fmt.Sprintf("%s: got %s, %s", assertionLabel(f.Metric, f.Step), formatMetricValue(f.Metric, f.Actual), strings.Join(f.Reasons, "; "))
 }
 
 // formatMetricValue renders v as a duration ("500ms") for a latency
@@ -189,64 +217,133 @@ func latencyPercentileMetric(metric string) (pct float64, ok bool) {
 	return v, true
 }
 
+// metricSet is what an assertion metric is computed from: the run as a whole
+// or one step of it, which carry the same headline numbers.
+type metricSet struct {
+	requests, success int
+	successRate, rate float64
+	lat               LatencyStats
+	hist              *hdrhistogram.Histogram
+}
+
+func (s Summary) metrics() metricSet {
+	return metricSet{s.Requests, s.Success, s.SuccessRate, s.Rate, s.Latencies, s.hist}
+}
+
+func (st StepSummary) metrics() metricSet {
+	return metricSet{st.Requests, st.Success, st.SuccessRate, st.Rate, st.Latencies, st.hist}
+}
+
 // metricValue returns the metric's value in the units documented on
 // Assertion, or an error if the name isn't recognized.
 func (s Summary) metricValue(metric string) (float64, error) {
+	return s.metrics().value(metric)
+}
+
+func (m metricSet) value(metric string) (float64, error) {
 	switch metric {
 	case "requests":
-		return float64(s.Requests), nil
+		return float64(m.requests), nil
 	case "success":
-		return float64(s.Success), nil
+		return float64(m.success), nil
 	case "success_rate":
-		return s.SuccessRate, nil
+		return m.successRate, nil
 	case "error_rate":
-		return 1 - s.SuccessRate, nil
+		return 1 - m.successRate, nil
 	case "rate":
-		return s.Rate, nil
+		return m.rate, nil
 	case "latency_min":
-		return s.Latencies.Min.Seconds(), nil
+		return m.lat.Min.Seconds(), nil
 	case "latency_mean":
-		return s.Latencies.Mean.Seconds(), nil
+		return m.lat.Mean.Seconds(), nil
 	case "latency_stddev":
-		return s.Latencies.StdDev.Seconds(), nil
+		return m.lat.StdDev.Seconds(), nil
 	case "latency_p50":
-		return s.Latencies.P50.Seconds(), nil
+		return m.lat.P50.Seconds(), nil
 	case "latency_p75":
-		return s.Latencies.P75.Seconds(), nil
+		return m.lat.P75.Seconds(), nil
 	case "latency_p90":
-		return s.Latencies.P90.Seconds(), nil
+		return m.lat.P90.Seconds(), nil
 	case "latency_p95":
-		return s.Latencies.P95.Seconds(), nil
+		return m.lat.P95.Seconds(), nil
 	case "latency_p99":
-		return s.Latencies.P99.Seconds(), nil
+		return m.lat.P99.Seconds(), nil
 	case "latency_max":
-		return s.Latencies.Max.Seconds(), nil
+		return m.lat.Max.Seconds(), nil
 	}
 	// Any other "latency_p<N>" is an arbitrary percentile computed directly
 	// from hist — only populated by Aggregator.Summary, so a
-	// hand-built Summary literal (e.g. in a test) can use the four fixed
+	// hand-built Summary literal (e.g. in a test) can use the fixed
 	// percentiles above but not an arbitrary one.
 	if pct, ok := latencyPercentileMetric(metric); ok {
-		return percentile(s.hist, pct/100).Seconds(), nil
+		return percentile(m.hist, pct/100).Seconds(), nil
 	}
 	return 0, fmt.Errorf("unknown assertion metric %q (see README's \"Assertions\" section for the supported list)", metric)
+}
+
+// assertionValue resolves the value assertion a is checked against: the
+// run's, or its Step's. ok is false when a names a step that recorded no
+// requests (the caller decides what that means); err is an unknown metric.
+func (s Summary) assertionValue(a Assertion) (actual float64, ok bool, err error) {
+	if a.Step == "" {
+		actual, err = s.metricValue(a.Metric)
+		return actual, true, err
+	}
+	if !IsKnownAssertionMetric(a.Metric) {
+		_, err = metricSet{}.value(a.Metric)
+		return 0, false, err
+	}
+	st, found := s.step(a.Step)
+	if !found {
+		return 0, false, nil
+	}
+	actual, err = st.metrics().value(a.Metric)
+	return actual, true, err
 }
 
 // Evaluate checks every assertion against s and returns one Failure per
 // assertion that didn't hold, in the order given. A nil/empty result means
 // everything passed (or there was nothing to check).
 func (s Summary) Evaluate(assertions []Assertion) ([]Failure, error) {
+	return s.evaluate(assertions, false)
+}
+
+// EvaluatePartial is Evaluate for a run still in progress: an assertion
+// scoped to a step that hasn't made a request yet is skipped instead of
+// failing, since "no requests so far" says nothing about it. It is what the
+// engine uses to decide whether to abort.
+func (s Summary) EvaluatePartial(assertions []Assertion) ([]Failure, error) {
+	return s.evaluate(assertions, true)
+}
+
+func (s Summary) evaluate(assertions []Assertion, partial bool) ([]Failure, error) {
 	var failures []Failure
 	for _, a := range assertions {
-		actual, err := s.metricValue(a.Metric)
+		actual, ok, err := s.assertionValue(a)
 		if err != nil {
 			return nil, err
 		}
+		if !ok && partial {
+			continue
+		}
+		if !ok {
+			failures = append(failures, Failure{Metric: a.Metric, Step: a.Step, Reasons: []string{
+				fmt.Sprintf("step %q recorded no requests (steps seen: %s)", a.Step, stepList(s.stepNames())),
+			}})
+			continue
+		}
 		if a.violated(actual) {
-			failures = append(failures, Failure{Metric: a.Metric, Actual: actual, Reasons: a.describe()})
+			failures = append(failures, Failure{Metric: a.Metric, Step: a.Step, Actual: actual, Reasons: a.describe()})
 		}
 	}
 	return failures, nil
+}
+
+func stepList(names []string) string {
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ", ")
 }
 
 // AssertionMetrics lists every fixed metric name Evaluate accepts, for use

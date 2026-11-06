@@ -90,6 +90,22 @@ type Options struct {
 	// OnResult, if set, is invoked for every result as it completes (e.g.
 	// for live progress reporting). It must return quickly.
 	OnResult func(generator.Result)
+
+	// AbortOn lists assertions (normally those with Abort set) the engine
+	// checks while the run is going, about once a second, against the results
+	// so far. The first one to fail stops the run and is recorded in
+	// Summary.Aborted; results that complete after that are discarded, since
+	// they are mostly in-flight requests cut off by the stop. Each assertion
+	// is skipped until its AbortAfter has elapsed. See Validate for what may
+	// be listed.
+	AbortOn []report.Assertion
+
+	// abort is the live checker Run builds from AbortOn.
+	abort *aborter
+
+	// stepOrder is the generator's step names in configured order, so the
+	// report lists steps the way the scenario does (see Aggregator.SetStepOrder).
+	stepOrder []string
 }
 
 // ResolveWorkers returns the concurrency a flat (non-staged) run will
@@ -137,6 +153,9 @@ func Validate(o Options) error {
 			return fmt.Errorf("max workers (%d) must not be less than workers (%d)", o.MaxWorkers, o.Workers)
 		}
 	}
+	if err := ValidateAbort(o.AbortOn); err != nil {
+		return err
+	}
 	for i, s := range o.Stages {
 		if s.Rate < 0 {
 			return fmt.Errorf("stage %d: rate must not be negative, got %v", i, s.Rate)
@@ -146,6 +165,24 @@ func Validate(o Options) error {
 		}
 		if s.Duration < 0 {
 			return fmt.Errorf("stage %d: duration must not be negative, got %v", i, s.Duration)
+		}
+	}
+	return nil
+}
+
+// ValidateAbort rejects assertions that can't sensibly stop a run early: a
+// count (requests, success) only means something once the run has ended, and
+// an unknown metric or negative AbortAfter is a mistake either way.
+func ValidateAbort(rules []report.Assertion) error {
+	for i, a := range rules {
+		if a.Metric == "requests" || a.Metric == "success" {
+			return fmt.Errorf("abort on %q: a count can only be judged when the run ends, so it can't abort one early", a.Metric)
+		}
+		if !report.IsKnownAssertionMetric(a.Metric) {
+			return fmt.Errorf("abort on assertion %d: unknown metric %q", i, a.Metric)
+		}
+		if a.AbortAfter < 0 {
+			return fmt.Errorf("abort on %q: abort_after must not be negative", a.Metric)
 		}
 	}
 	return nil
@@ -161,13 +198,51 @@ func Run(ctx context.Context, a generator.Generator, opts Options) report.Summar
 		// prevents any slot from starting a new VU generation once hit).
 		opts.Requests = uint64(opts.workers()) * opts.Iterations
 	}
-	if len(opts.Stages) > 0 {
-		return runStaged(ctx, a, opts)
+	if sn, ok := a.(interface{ StepNames() []string }); ok {
+		opts.stepOrder = sn.StepNames()
 	}
-	if opts.MaxWorkers > 0 {
-		return runOpenModel(ctx, a, opts)
+	if len(opts.AbortOn) > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		opts.abort = &aborter{rules: opts.AbortOn, cancel: cancel}
 	}
-	return runFlat(ctx, a, opts)
+
+	var summary report.Summary
+	switch {
+	case len(opts.Stages) > 0:
+		summary = runStaged(ctx, a, opts)
+	case opts.MaxWorkers > 0:
+		summary = runOpenModel(ctx, a, opts)
+	default:
+		summary = runFlat(ctx, a, opts)
+	}
+	if opts.abort != nil {
+		summary.Aborted = opts.abort.reason
+	}
+	return summary
+}
+
+// collect drains results into a fresh Aggregator, feeding OnResult and the
+// abort check as it goes, and returns it with how long the run took (the
+// time the consumer was busy, which tracks the run since results stream in as
+// they complete). It is the one place results are consumed, so it is also the
+// one goroutine that may touch the Aggregator.
+func collect(results <-chan generator.Result, opts Options) (*report.Aggregator, time.Duration) {
+	agg := report.NewAggregator()
+	agg.SetStepOrder(opts.stepOrder)
+	start := time.Now()
+	for r := range results {
+		if opts.abort.stopped() {
+			continue // keep draining so workers never block, but stop counting
+		}
+		agg.Add(r)
+		if opts.OnResult != nil {
+			opts.OnResult(r)
+		}
+		opts.abort.observe(agg, start)
+	}
+	return agg, time.Since(start)
 }
 
 // runOpenModel implements constant-arrival-rate scheduling: a rate.Limiter
@@ -289,15 +364,7 @@ func runOpenModel(ctx context.Context, a generator.Generator, opts Options) repo
 		close(results)
 	}()
 
-	agg := report.NewAggregator()
-	start := time.Now()
-	for r := range results {
-		agg.Add(r)
-		if opts.OnResult != nil {
-			opts.OnResult(r)
-		}
-	}
-	elapsed := time.Since(start)
+	agg, elapsed := collect(results, opts)
 
 	summary := agg.Summary(elapsed)
 	summary.Saturated = saturated.Load()
@@ -383,15 +450,7 @@ func runFlat(ctx context.Context, a generator.Generator, opts Options) report.Su
 		close(results)
 	}()
 
-	agg := report.NewAggregator()
-	start := time.Now()
-	for r := range results {
-		agg.Add(r)
-		if opts.OnResult != nil {
-			opts.OnResult(r)
-		}
-	}
-	elapsed := time.Since(start)
+	agg, elapsed := collect(results, opts)
 
 	return agg.Summary(elapsed)
 }
@@ -603,15 +662,7 @@ func runStaged(ctx context.Context, a generator.Generator, opts Options) report.
 		close(results)
 	}()
 
-	agg := report.NewAggregator()
-	start := time.Now()
-	for r := range results {
-		agg.Add(r)
-		if opts.OnResult != nil {
-			opts.OnResult(r)
-		}
-	}
-	elapsed := time.Since(start)
+	agg, elapsed := collect(results, opts)
 
 	summary := agg.Summary(elapsed)
 	summary.Saturated = saturated.Load()

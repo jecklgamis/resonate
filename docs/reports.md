@@ -23,6 +23,14 @@ The same values are in the JSON report as `latencies.min`, `mean`, `stddev`, `p5
 be asserted on (for example `latency_p75`; see [Assertions](scenarios.md#assertions)).
 The percentiles are computed from a histogram with about 0.1% error.
 
+### Steps
+
+With two or more named (or default-labelled) steps, a `Steps:` table follows the totals:
+each step's requests, success rate and p50/p95/p99. See
+[Per-Step Results](scenarios.md#per-step-results). A run stopped by an `abort: true`
+assertion ends with an `ABORTED: ...` line (see
+[Stopping a run early](scenarios.md#stopping-a-run-early)).
+
 ### What counts as a request
 
 For HTTP, one request is one HTTP call. The other protocols report in finer
@@ -132,6 +140,71 @@ feeding it into other tooling. Each `time_series` bucket carries `p50_latency`,
 bins are log-spaced (`le` is each bin's upper edge). Change the path with `--json-report`, or
 pass `""` to disable it. Independent of `--json`, which only controls the
 *stdout* format.
+
+Two fields are present only when they apply: `steps` (one entry per step, with its own
+`requests`, `success_rate`, `latencies`, `status_codes` and `errors`; see
+[Per-Step Results](scenarios.md#per-step-results)) and `aborted` (the failed assertion that
+stopped the run early). The HTML report shows them as a *Steps* table and an *ABORTED* banner.
+
+## Comparing Runs
+
+`resonate compare` reads two JSON reports and prints every headline metric side by side,
+then each step's metrics when both runs have it. Keep a `report.json` from a known-good run
+as the baseline and compare each new run against it:
+
+```sh
+resonate run scenario.yaml --json-report current.json
+resonate compare baseline.json current.json
+```
+
+```text
+Metric                    Baseline         Current      Change
+requests                      1000            1000       +0.0%
+rate                        100.00           92.00       -8.0%
+success_rate               100.00%         100.00%       +0.0%
+latency_p50                   50ms            75ms      +50.0%
+latency_p95                  100ms           150ms      +50.0%
+latency_p99                  200ms           300ms      +50.0%
+latency_max                  300ms           450ms      +50.0%
+login:latency_p95             25ms          37.5ms      +50.0%
+```
+
+(The real table also lists the mean, p75, p90 and `error_rate`, and the same set for every step.)
+
+With `--fail-on` it exits non-zero when a regression rule matches, so a pipeline can gate on
+it. A rule is `<metric><op><threshold>` over the change from baseline to current
+(`>`, `>=`, `<`, `<=`); repeat the flag for several rules. A threshold ending in `%` is
+relative to the baseline, anything else is an absolute change in the metric's unit (a duration
+for latency metrics, a plain number for the rest; `success_rate` and `error_rate` are ratios from
+0 to 1). Prefix a metric with `<step>:` to gate on one step.
+
+```sh
+resonate compare baseline.json current.json \
+  --fail-on 'latency_p95>10%' \
+  --fail-on 'rate<-5%' \
+  --fail-on 'error_rate>0.01' \
+  --fail-on 'checkout:latency_p99>50ms'
+```
+
+That fails the build if p95 is more than 10% slower, throughput is down more than 5%, the
+error rate is up by more than a point, or the `checkout` step's p99 is more than 50ms slower.
+Each rule prints a verdict line, so a failing pipeline says which one tripped:
+
+```text
+FAIL  latency_p95>10%: 100ms -> 150ms (+50.0%)
+FAIL  rate<-5%: 100.00 -> 92.00 (-8.0%)
+ok    error_rate>0.01: 0.00% -> 0.00% (+0.0%)
+```
+
+Notes:
+
+- A rule that can't be evaluated is an error, never a silent pass: a step missing from either
+  run, or an unknown metric. Percentiles other than p50/p75/p90/p95/p99 aren't in the JSON
+  report, so they can't be compared.
+- A relative rule on a metric whose baseline is zero (no errors before, some now) fails, since a
+  percentage of zero is undefined; use an absolute threshold for those, such as `error_rate>0.01`.
+- A baseline or current run that was aborted early is flagged on stderr, since its numbers cover
+  only part of a run.
 
 ## Raw Results (JSON Lines)
 

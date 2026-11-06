@@ -26,6 +26,11 @@ import (
 // {{ }} expressions (see internal/tmpl) that are re-rendered for every
 // request — e.g. url: "/users/{{randInt 1 1000}}".
 type HTTPTarget struct {
+	// Name labels this target in the report's per-step breakdown and in
+	// step-scoped assertions. Optional: it defaults to "METHOD url" with the
+	// query string stripped. Targets sharing a name are reported together.
+	Name string
+
 	Method string
 	URL    string
 	Query  map[string]string
@@ -255,6 +260,7 @@ func requireHTTPSForHTTP3(f httpFields) error {
 // httpFields holds one request template's fields pre-parsed into tmpl.Field
 // once at construction time, so per-request rendering is cheap.
 type httpFields struct {
+	name          string // report label (Result.Step); never empty once compiled by a generator
 	method        string
 	rawURL        string // the URL template source, after BaseURL resolution
 	url           tmpl.Field
@@ -428,7 +434,7 @@ func buildRequest(ctx context.Context, f httpFields, data tmpl.Data) (*http.Requ
 func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Data, extract map[string]string, maxBody int64) (Result, map[string]string) {
 	req, bodyLen, err := buildRequest(ctx, f, data)
 	if err != nil {
-		return Result{Timestamp: time.Now(), Error: err, Protocol: "http"}, nil
+		return Result{Timestamp: time.Now(), Error: err, Protocol: "http", Step: f.name}, nil
 	}
 
 	start := time.Now()
@@ -439,6 +445,7 @@ func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Da
 			Latency:   time.Since(start),
 			Error:     err,
 			Protocol:  "http",
+			Step:      f.name,
 			BytesOut:  int64(bodyLen),
 		}, nil
 	}
@@ -471,6 +478,7 @@ func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Da
 		BytesIn:    n,
 		BytesOut:   int64(bodyLen),
 		Protocol:   "http",
+		Step:       f.name,
 	}
 	if len(f.expectStatus) > 0 || len(f.expectHeaders) > 0 || len(f.expectBody) > 0 {
 		matched := true
@@ -560,6 +568,7 @@ func NewHTTPGenerator(targets []HTTPTarget, opts HTTPOptions) (*HTTPGenerator, e
 		if err != nil {
 			return nil, err
 		}
+		f.name = stepName(t.Name, f)
 		if opts.HTTP3 {
 			if err := requireHTTPSForHTTP3(f); err != nil {
 				return nil, err
@@ -577,6 +586,18 @@ func NewHTTPGenerator(targets []HTTPTarget, opts HTTPOptions) (*HTTPGenerator, e
 
 func (a *HTTPGenerator) Protocol() string { return "http" }
 
+// StepNames lists the report labels this generator's requests carry
+// (Result.Step), in target order, without duplicates.
+func (a *HTTPGenerator) StepNames() []string {
+	var names []string
+	for _, t := range a.targets {
+		if !slices.Contains(names, t.name) {
+			names = append(names, t.name)
+		}
+	}
+	return names
+}
+
 func (a *HTTPGenerator) Close() error {
 	closeClient(a.client)
 	a.feeder.Close()
@@ -590,4 +611,29 @@ func (a *HTTPGenerator) Do(ctx context.Context, vuID int) []Result {
 
 	result, _ := doHTTP(ctx, a.client, tgt, data, nil, a.maxBody)
 	return []Result{result}
+}
+
+// stepName is the label a request carries in the per-step report: the
+// configured name, else "METHOD url" built from the URL template source with
+// any query string, fragment and credentials removed (so the label is stable
+// across requests and never carries a secret).
+func stepName(name string, f httpFields) string {
+	if name != "" {
+		return name
+	}
+	u := f.rawURL
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		u = u[:i]
+	}
+	if i := strings.Index(u, "://"); i >= 0 {
+		rest := u[i+3:]
+		slash := strings.IndexByte(rest, '/')
+		if slash < 0 {
+			slash = len(rest)
+		}
+		if at := strings.LastIndexByte(rest[:slash], '@'); at >= 0 {
+			u = u[:i+3] + rest[at+1:]
+		}
+	}
+	return f.method + " " + u
 }

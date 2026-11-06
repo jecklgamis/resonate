@@ -16,6 +16,12 @@ type Result struct {
 	Error      error
 	Protocol   string
 
+	// Step names the target or flow step that produced this result, so the
+	// report can break the run down per step. It's the configured Name, or
+	// "METHOD url" (query and credentials stripped) when none was given;
+	// empty for protocols with no per-step breakdown (WebSocket, SSE, gRPC).
+	Step string
+
 	// successOverride, if non-nil, replaces the default 2xx/3xx-based
 	// Success() calculation — set by doHTTP when a target's ExpectStatus
 	// check ran, so e.g. an expected 404 can count as a success (and an

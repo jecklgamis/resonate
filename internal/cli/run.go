@@ -51,6 +51,11 @@ func newRunCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			assertions, err := assertionsFrom(scenario.Assertions)
+			if err != nil {
+				return err
+			}
+			opts.AbortOn = abortRules(assertions)
 			if err := engine.Validate(opts); err != nil {
 				return err
 			}
@@ -59,9 +64,8 @@ func newRunCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			assertions, err := assertionsFrom(scenario.Assertions)
-			if err != nil {
+			if err := checkAssertionSteps(a, assertions); err != nil {
+				a.Close()
 				return err
 			}
 
@@ -104,8 +108,25 @@ func assertionsFrom(cfgs []config.AssertionConfig) ([]report.Assertion, error) {
 // report.Assertion, returning how many conditions were set (0 is an error
 // the caller reports, so every field's parse error can be surfaced first).
 func assertionFrom(i int, c config.AssertionConfig) (report.Assertion, int, error) {
-	a := report.Assertion{Metric: c.Metric, AroundExclusive: c.AroundExclusive, DeviatesExclusive: c.DeviatesExclusive}
+	a := report.Assertion{Metric: c.Metric, Step: c.Step, AroundExclusive: c.AroundExclusive, DeviatesExclusive: c.DeviatesExclusive, Abort: c.Abort}
 	set := 0
+
+	if c.AbortAfter != "" && !c.Abort {
+		return a, 0, fmt.Errorf("assertions[%d] (%s): abort_after only applies with abort: true", i, c.Metric)
+	}
+	if c.Abort {
+		a.AbortAfter = defaultAbortAfter
+		if c.AbortAfter != "" {
+			d, err := time.ParseDuration(c.AbortAfter)
+			if err != nil {
+				return a, 0, fmt.Errorf("assertions[%d] (%s): abort_after: invalid duration %q", i, c.Metric, c.AbortAfter)
+			}
+			if d < 0 {
+				return a, 0, fmt.Errorf("assertions[%d] (%s): abort_after must not be negative", i, c.Metric)
+			}
+			a.AbortAfter = d
+		}
+	}
 
 	parse := func(field, value string) (*float64, error) {
 		if value == "" {
@@ -263,6 +284,7 @@ func buildHTTPGenerator(cfg config.HTTPConfig) (generator.Generator, error) {
 			return nil, fmt.Errorf("target %s: %w", t.URL, err)
 		}
 		targets = append(targets, generator.HTTPTarget{
+			Name:          t.Name,
 			Method:        t.Method,
 			URL:           t.URL,
 			Query:         t.Query,
@@ -328,7 +350,7 @@ func resolveStep(s config.HTTPTargetConfig) (generator.FlowStep, error) {
 		if err != nil {
 			return generator.FlowStep{}, fmt.Errorf("invalid during: %w", err)
 		}
-		return generator.FlowStep{Repeat: s.Repeat, During: during, If: s.If, Steps: nested}, nil
+		return generator.FlowStep{Name: s.Name, Repeat: s.Repeat, During: during, If: s.If, Steps: nested}, nil
 	}
 
 	body, rawBody, err := resolveBody(s)
@@ -344,6 +366,7 @@ func resolveStep(s config.HTTPTargetConfig) (generator.FlowStep, error) {
 		return generator.FlowStep{}, fmt.Errorf("invalid pause_max: %w", err)
 	}
 	return generator.FlowStep{
+		Name:          s.Name,
 		Method:        s.Method,
 		URL:           s.URL,
 		Query:         s.Query,
@@ -621,4 +644,32 @@ func newFeeder(cfg config.FeederConfig) (*generator.Feeder, error) {
 		opts.Timeout = d
 	}
 	return generator.NewKafkaFeeder(opts)
+}
+
+// defaultAbortAfter is how long a run is left to warm up before an abort
+// assertion may stop it, when the scenario doesn't say: the first requests
+// of a run (connection setup, cold caches) make for noisy percentiles and a
+// jumpy success rate, and aborting on them would be a false alarm.
+const defaultAbortAfter = 5 * time.Second
+
+// abortRules picks out the assertions the engine should watch live.
+func abortRules(assertions []report.Assertion) []report.Assertion {
+	var rules []report.Assertion
+	for _, a := range assertions {
+		if a.Abort {
+			rules = append(rules, a)
+		}
+	}
+	return rules
+}
+
+// checkAssertionSteps rejects an assertion scoped to a step the scenario
+// doesn't have (see report.ValidateSteps).
+func checkAssertionSteps(g generator.Generator, assertions []report.Assertion) error {
+	sn, ok := g.(interface{ StepNames() []string })
+	var known []string
+	if ok {
+		known = sn.StepNames()
+	}
+	return report.ValidateSteps(assertions, known, ok)
 }

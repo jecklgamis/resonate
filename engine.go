@@ -26,6 +26,10 @@ func Run(ctx context.Context, gen Generator, opts Options) Summary {
 // (e.g. negative Rate/Workers) — call it before Run.
 func Validate(opts Options) error { return engine.Validate(opts) }
 
+// ValidateAbort rejects assertions that can't stop a run early (a count such as
+// requests/success, an unknown metric, a negative AbortAfter).
+func ValidateAbort(assertions []Assertion) error { return engine.ValidateAbort(assertions) }
+
 // ResolveWorkers returns the worker count Run will actually use for opts —
 // either opts.Workers if set, or the rate-aware default when it's 0.
 func ResolveWorkers(opts Options) int { return engine.ResolveWorkers(opts) }

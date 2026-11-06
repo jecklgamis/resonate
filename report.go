@@ -35,6 +35,17 @@ func NewAggregator() *Aggregator { return report.NewAggregator() }
 // names.
 type Assertion = report.Assertion
 
+// StepSummary is one named target or flow step's share of a run — see
+// Summary.Steps.
+type StepSummary = report.StepSummary
+
+// ValidateSteps rejects an Assertion whose Step names a step that isn't in
+// known (a typo would otherwise surface only after the run); supported is
+// false for a scenario with no per-step breakdown.
+func ValidateSteps(assertions []Assertion, known []string, supported bool) error {
+	return report.ValidateSteps(assertions, known, supported)
+}
+
 // Failure describes one Assertion that didn't hold.
 type Failure = report.Failure
 

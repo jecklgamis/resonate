@@ -437,6 +437,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Label for this request in the report's per-step breakdown and in step-scoped assertions. Defaults to \"METHOD url\" with the query string removed; requests sharing a name are reported together."
+        },
         "method": {
           "type": "string",
           "description": "HTTP method; defaults to GET."
@@ -893,6 +898,21 @@
           "pattern": "^(requests|success|success_rate|error_rate|rate|latency_(min|mean|stddev|max|p(100(\\.0+)?|([0-9]|[1-9][0-9])(\\.[0-9]+)?)))$",
           "description": "Metric to evaluate; percentile metrics may use latency_p<N>, where N is between 0 and 100."
         },
+        "step": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Scope the assertion to one named target or flow step instead of the whole run. HTTP scenarios only; must match a step's name (or its default \"METHOD url\" label)."
+        },
+        "abort": {
+          "type": "boolean",
+          "default": false,
+          "description": "Stop the run as soon as this assertion fails while it is still going, instead of waiting for the end. Not valid on the requests or success metrics."
+        },
+        "abort_after": {
+          "type": "string",
+          "default": "5s",
+          "description": "With abort: how long to let the run warm up before this assertion may stop it, as a duration such as 10s. Defaults to 5s."
+        },
         "min": {
           "$ref": "#/$defs/numberOrString"
         },
@@ -936,6 +956,9 @@
         }
       },
       "required": ["metric"],
+      "dependentRequired": {
+        "abort_after": ["abort"]
+      },
       "anyOf": [
         {
           "required": ["min"]

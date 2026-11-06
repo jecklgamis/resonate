@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,12 @@ import (
 // every iteration that virtual user runs afterward), keyed by variable
 // name and valued by an extraction rule (see extractValue).
 type FlowStep struct {
+	// Name labels this request in the report's per-step breakdown and in
+	// step-scoped assertions. Optional: it defaults to "METHOD url" with the
+	// query string stripped. Steps sharing a name are reported together.
+	// Not allowed on a repeat/during/if block.
+	Name string
+
 	Method string
 	URL    string
 	Query  map[string]string
@@ -197,6 +204,9 @@ func compileStep(s FlowStep, baseURL string) (compiledStep, error) {
 		if s.Method != "" || s.URL != "" {
 			return compiledStep{}, fmt.Errorf("a repeat/during/if step can't also set method/url")
 		}
+		if s.Name != "" {
+			return compiledStep{}, fmt.Errorf("a repeat/during/if step can't have a name; name the requests inside it")
+		}
 		if len(s.Steps) == 0 {
 			return compiledStep{}, fmt.Errorf("repeat/during/if requires at least one nested step")
 		}
@@ -228,10 +238,29 @@ func compileStep(s FlowStep, baseURL string) (compiledStep, error) {
 	if err != nil {
 		return compiledStep{}, err
 	}
+	f.name = stepName(s.Name, f)
 	return compiledStep{httpFields: f, extract: s.Extract, pause: s.Pause, pauseMax: s.PauseMax}, nil
 }
 
 func (a *FlowGenerator) Protocol() string { return "http" }
+
+// StepNames lists the report labels this flow's requests carry
+// (Result.Step), in flow order, without duplicates. Setup steps are left out:
+// their results are never reported.
+func (a *FlowGenerator) StepNames() []string {
+	return appendStepNames(nil, a.flow)
+}
+
+func appendStepNames(names []string, steps []compiledStep) []string {
+	for _, s := range steps {
+		if s.control != controlNone {
+			names = appendStepNames(names, s.nested)
+		} else if !slices.Contains(names, s.name) {
+			names = append(names, s.name)
+		}
+	}
+	return names
+}
 
 // requireHTTPSInSteps applies requireHTTPSForHTTP3 to every request step,
 // recursing into repeat/during/if blocks.

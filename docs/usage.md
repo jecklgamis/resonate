@@ -198,6 +198,12 @@ richer condition set (`gt`/`lt`/`is`/`in`/`around`/`deviatesAround`), and
 [`examples/http-assertions.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-assertions.yaml)
 for a worked example.
 
+In a scenario file an assertion can also be scoped to one named step (`step:`) and can stop
+the run early when it fails (`abort: true`); see
+[Per-Step Results](scenarios.md#per-step-results) and
+[Stopping a run early](scenarios.md#stopping-a-run-early). To gate on a regression against an
+earlier run instead of fixed thresholds, use [`resonate compare`](reports.md#comparing-runs).
+
 ## Live Progress
 
 Unless `--quiet`, both commands print a one-line progress update to

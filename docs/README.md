@@ -28,6 +28,9 @@ for the repo's top-level overview, see its
 | Server-Sent Events | Open a stream per iteration, read N events and/or for a duration; reports time-to-headers and per-event gaps (`protocol: sse`). See the [SSE guide](sse.md) |
 | gRPC support | Unary and server-/client-/bidirectional-streaming calls, with the schema from server reflection, `.proto` files or a descriptor set; JSON messages with templating, metadata, response chaining, status-code and body checks (`protocol: grpc`). See the [gRPC guide](grpc.md) |
 | Assertions / CI gating | Non-zero exit on a failed threshold — `resonate hit --assert 'metric<op>threshold'` or a scenario file's `assertions:` (richer condition set: `gt`/`lt`/`is`/`in`/`around`/`deviatesAround`) |
+| Per-step results | Each named request in a flow or target list gets its own success rate and latency percentiles, and assertions can target one step (`step:`) — see [Per-Step Results](scenarios.md#per-step-results) |
+| Abort on threshold | An assertion with `abort: true` stops the run as soon as it fails, instead of at the end — see [Stopping a run early](scenarios.md#stopping-a-run-early) |
+| Regression gating | `resonate compare baseline.json current.json --fail-on 'latency_p95>10%'` exits non-zero when a run regressed against an earlier one — see [Comparing Runs](reports.md#comparing-runs) |
 | Reporting | Four formats every run by default: stdout summary, self-contained HTML (script-free, with a hoverable requests-over-time chart), JSON, raw per-request JSON Lines dump. See [Reports](reports.md) |
 | HTTP transport controls | mTLS, custom CA trust, HTTP/3 (QUIC) on request, h2c (HTTP/2 cleartext), keep-alive control. See the [HTTP/3 guide](http3.md) |
 | Go library | Usable as `go get github.com/jecklgamis/resonate` — thin public facade over the CLI's engine, plus a fluent `Scenario` builder DSL |

@@ -80,7 +80,8 @@ What an iteration produces:
   (`load.iterations`). See [Execution Models](execution-models.md).
 - **`internal/report`** — `report.go` aggregates results into latency percentiles
   (an HDR histogram, so memory is fixed), success rate, throughput and status/error
-  breakdowns; `assert.go` evaluates `assertions:` against a finished `Summary`;
+  breakdowns, including a per-step breakdown (`steps.go`); `assert.go` evaluates `assertions:` against a finished `Summary` (or a run in progress, for abort-on-threshold);
+  `compare.go` diffs two JSON reports for `resonate compare`;
   `html.go` renders the self-contained HTML report (its charts are server-side SVG
   and CSS, with no JavaScript).
 - **`internal/config`** — the YAML scenario schema and loader, and the embedded JSON

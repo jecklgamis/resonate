@@ -15,3 +15,4 @@
   - [resonate](cli/resonate.md)
   - [resonate hit](cli/resonate_hit.md)
   - [resonate run](cli/resonate_run.md)
+  - [resonate compare](cli/resonate_compare.md)
