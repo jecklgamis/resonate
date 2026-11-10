@@ -11,6 +11,7 @@
 - [Reports](reports.md)
 - [Library](library.md)
 - [Architecture](architecture.md)
+  - [Internals](internals.md)
 - CLI Reference
   - [resonate](cli/resonate.md)
   - [resonate hit](cli/resonate_hit.md)
