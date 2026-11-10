@@ -7,7 +7,7 @@ for quick, flag-driven one-off runs, `resonate run <scenario.yaml>` for
 reusable multi-target/multi-step/WebSocket/SSE/gRPC scenarios, and the same
 engine as a Go library.
 
-> **Heads up**: this project is under active development and in alpha. APIs, flags, and the YAML schema may change without notice. Use at your own risk.
+> **Beta**: the scenario YAML schema, the `report.json` / `results.jsonl` formats and the exit codes are stable and versioned (see [Stability](docs/reports.md#stability)). Flags and features may still be added, and the Go library API may still change before 1.0.
 >
 > A scenario file can read local files and environment variables
 > (`body_file`, `feeder`, `env "VAR_NAME"`) and send them wherever it's

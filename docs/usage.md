@@ -173,6 +173,18 @@ stops the rest of that `flow`/`setup` iteration, same as any failed step
 (see [Multi-Step Flows](scenarios.md#multi-step-flows-and-response-chaining)).
 See [`examples/http-status-checks.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-status-checks.yaml).
 
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The run completed and every assertion held |
+| `1` | The run could not complete (a runtime or I/O error) |
+| `2` | Usage error: unknown flag, wrong number of arguments, or a scenario file that can't be read or parsed |
+| `3` | An assertion failed, or the run was aborted early by an `abort: true` assertion |
+
+These are stable. CI can gate on `3` specifically to tell a performance regression from a
+broken pipeline.
+
 ## Assertions
 
 Both commands check metrics from the completed report against

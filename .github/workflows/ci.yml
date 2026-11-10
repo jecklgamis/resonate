@@ -42,3 +42,6 @@ jobs:
 
       - name: docs up to date
         run: make docs-check
+
+      - name: vulnerability scan
+        run: make vuln

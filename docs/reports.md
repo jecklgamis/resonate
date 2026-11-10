@@ -146,6 +146,26 @@ Two fields are present only when they apply: `steps` (one entry per step, with i
 [Per-Step Results](scenarios.md#per-step-results)) and `aborted` (the failed assertion that
 stopped the run early). The HTML report shows them as a *Steps* table and an *ABORTED* banner.
 
+### Stability
+
+`report.json` and `results.jsonl` are a stable contract, since other tools (such as
+[resonate-fleet](https://github.com/jecklgamis/resonate-fleet)) parse them.
+
+- `report.json` carries `schema_version` (currently `1`). It changes only for a breaking
+  change to a documented field: a rename, a removal or a change of unit. Adding a field
+  never bumps it, so readers must ignore fields they don't know.
+- Stable `report.json` fields: `requests`, `success`, `success_rate`, `duration`
+  (nanoseconds), `requests_per_sec`, `bytes_in`, `bytes_out`, `latencies.*` (`min`, `mean`,
+  `stddev`, `p50`, `p75`, `p90`, `p95`, `p99`, `max`; nanoseconds), `status_codes`, `errors`,
+  `steps`, `aborted`, `time_series` and `latency_histogram`.
+- Stable `results.jsonl` fields per line: `timestamp` (RFC 3339), `latency_ms`,
+  `status_code`, `bytes_in`, `bytes_out`, `protocol` and `error` (only on failure).
+- The `resonate run` flags `--quiet`, `--html-report`, `--json-report` and `--results-file`,
+  and the [exit codes](usage.md#exit-codes), are stable too.
+
+`internal/cli/contract_test.go` runs the exact invocation resonate-fleet uses and checks
+these fields, so a breaking change fails the build.
+
 ## Comparing Runs
 
 `resonate compare` reads two JSON reports and prints every headline metric side by side,

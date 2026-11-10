@@ -5,7 +5,7 @@ quick, flag-driven one-off run against a single URL, and
 `resonate run <scenario.yaml>` for reusable, multi-target/multi-step
 scenarios.
 
-> **Alpha**: APIs, flags, and the YAML schema may change without notice.
+> **Beta**: the scenario YAML schema, the `report.json` / `results.jsonl` formats and the exit codes are stable and versioned (see [Stability](reports.md#stability)). Flags and features may still be added, and the Go library API may still change before 1.0.
 
 This site covers **installing and using** resonate. For building/testing
 the project itself, see

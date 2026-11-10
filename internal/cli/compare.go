@@ -32,7 +32,7 @@ step's metric is written <step>:<metric>.`,
   resonate compare baseline.json report.json --fail-on 'error_rate>0.01' --fail-on 'login:latency_p99>20ms'`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 2 {
-				return fmt.Errorf("expected a baseline and a current report, got %d argument(s); try '%s --help'", len(args), cmd.CommandPath())
+				return usageError(fmt.Errorf("expected a baseline and a current report, got %d argument(s); try '%s --help'", len(args), cmd.CommandPath()))
 			}
 			return nil
 		},

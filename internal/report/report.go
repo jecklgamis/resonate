@@ -121,8 +121,17 @@ func (a *Aggregator) Add(r generator.Result) {
 	}
 }
 
+// SchemaVersion is the version of the report.json / --json layout, written to
+// every Summary as "schema_version". It only changes for a breaking change to
+// a documented field (a rename, removal or change of unit); adding a field
+// does not bump it. See docs/reports.md#stability.
+const SchemaVersion = 1
+
 // Summary is a point-in-time snapshot of aggregated results.
 type Summary struct {
+	// SchemaVersion identifies the JSON layout; see the SchemaVersion constant.
+	SchemaVersion int `json:"schema_version"`
+
 	Requests    int            `json:"requests"`
 	Success     int            `json:"success"`
 	SuccessRate float64        `json:"success_rate"`
@@ -229,13 +238,14 @@ func (a *Aggregator) Snapshot(wallClock time.Duration) Summary {
 	}
 
 	summary := Summary{
-		Requests:    requests,
-		Success:     a.success,
-		Duration:    dur,
-		BytesIn:     a.bytesIn,
-		BytesOut:    a.bytesOut,
-		StatusCodes: a.codes,
-		Errors:      a.errors,
+		SchemaVersion: SchemaVersion,
+		Requests:      requests,
+		Success:       a.success,
+		Duration:      dur,
+		BytesIn:       a.bytesIn,
+		BytesOut:      a.bytesOut,
+		StatusCodes:   a.codes,
+		Errors:        a.errors,
 	}
 	if requests > 0 {
 		summary.SuccessRate = float64(a.success) / float64(requests)

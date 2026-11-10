@@ -33,6 +33,11 @@ example-sse-server:
 example-http3-server:
 	go run ./examples/testhttp3server $(ARGS)
 
+# Scan dependencies and the standard library for known vulnerabilities.
+.PHONY: vuln
+vuln:
+	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
 .PHONY: test
 test:
 	go test ./...

@@ -19,6 +19,10 @@ func NewRootCommand(version string) *cobra.Command {
 		SilenceErrors: true,
 	}
 
+	// An unknown or malformed flag is a usage error (exit code 2), like a
+	// wrong number of arguments.
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError(err) })
+
 	root.AddCommand(newHitCommand())
 	root.AddCommand(newRunCommand())
 	root.AddCommand(newCompareCommand())

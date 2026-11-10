@@ -37,14 +37,14 @@ func newRunCommand() *cobra.Command {
         url: /health`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
-				return fmt.Errorf("expected one scenario file, got %d; try '%s --help' or '%s run scenario.yaml'", len(args), cmd.CommandPath(), cmd.Root().CommandPath())
+				return usageError(fmt.Errorf("expected one scenario file, got %d; try '%s --help' or '%s run scenario.yaml'", len(args), cmd.CommandPath(), cmd.Root().CommandPath()))
 			}
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			scenario, err := config.Load(args[0])
 			if err != nil {
-				return err
+				return usageError(err)
 			}
 
 			opts, err := loadOptionsFrom(scenario.Load)

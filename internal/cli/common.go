@@ -127,7 +127,7 @@ func runAndReport(a generator.Generator, opts engine.Options, out runOpts) error
 		// numbers, but "3 assertion(s) failed" says nothing about why the run
 		// ended early. The failures were still printed above, and the report
 		// itself carries an ABORTED line.
-		return fmt.Errorf("run aborted: %s", summary.Aborted)
+		return assertionError(fmt.Errorf("run aborted: %s", summary.Aborted))
 	}
 	return failErr
 }
@@ -205,7 +205,7 @@ func reportAssertionFailures(failures []report.Failure, total int) error {
 	for _, f := range failures {
 		fmt.Fprintf(os.Stderr, "  - %s\n", f)
 	}
-	return fmt.Errorf("%d assertion(s) failed", len(failures))
+	return assertionError(fmt.Errorf("%d assertion(s) failed", len(failures)))
 }
 
 // writeHTMLReport renders and writes the self-contained HTML report to path.

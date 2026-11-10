@@ -56,7 +56,7 @@ func newHitCommand() *cobra.Command {
 			"--body '{\"id\": {{.Seq}}, \"tok\": \"{{uuid}}\"}'. See README for the function list.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
-				return fmt.Errorf("expected one URL, got %d; try '%s --help' or '%s hit https://example.com --duration 2s'", len(args), cmd.CommandPath(), cmd.Root().CommandPath())
+				return usageError(fmt.Errorf("expected one URL, got %d; try '%s --help' or '%s hit https://example.com --duration 2s'", len(args), cmd.CommandPath(), cmd.Root().CommandPath()))
 			}
 			return nil
 		},
