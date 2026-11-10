@@ -22,6 +22,12 @@ Markdown in [`docs/`](docs), or served locally with `docsify serve docs`.
 ## Install
 
 ```sh
+brew install jecklgamis/tap/resonate
+```
+
+Or build from source:
+
+```sh
 go build -o bin/resonate ./cmd/resonate
 ```
 

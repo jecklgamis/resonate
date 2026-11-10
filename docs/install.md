@@ -1,5 +1,15 @@
 # Install
 
+## Homebrew (macOS and Linux)
+
+```sh
+brew install jecklgamis/tap/resonate
+```
+
+The formula lives in
+[jecklgamis/homebrew-tap](https://github.com/jecklgamis/homebrew-tap) and is
+updated automatically on every release. Upgrade with `brew upgrade resonate`.
+
 ## Using a Prebuilt Binary
 
 Download a release for your platform (Linux, macOS, or Windows;
