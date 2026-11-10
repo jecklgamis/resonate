@@ -4,11 +4,16 @@ MODELS  := constant-vus ramping-vus constant-arrival-rate ramping-arrival-rate b
 .PHONY: build
 build:
 	go build -o $(BIN_DIR)/full-scenario ./full-scenario
+	go build -o $(BIN_DIR)/suite ./suite
 	@for m in $(MODELS); do go build -o $(BIN_DIR)/$$m ./$$m || exit 1; done
 
 .PHONY: run-full-scenario
 run-full-scenario:
 	go run ./full-scenario
+
+.PHONY: run-suite
+run-suite:
+	go run ./suite
 
 .PHONY: run-constant-vus
 run-constant-vus:
@@ -71,8 +76,9 @@ clean:
 .PHONY: help
 help:
 	@echo "Targets:"
-	@echo "  build                       build bin/full-scenario + one binary per execution model"
+	@echo "  build                       build bin/full-scenario, bin/suite + one binary per execution model"
 	@echo "  run-full-scenario           go run ./full-scenario"
+	@echo "  run-suite                   go run ./suite"
 	@echo "  run-constant-vus            go run ./constant-vus"
 	@echo "  run-ramping-vus             go run ./ramping-vus"
 	@echo "  run-constant-arrival-rate   go run ./constant-arrival-rate"

@@ -3,9 +3,9 @@
 A standalone Go module demonstrating resonate as an embeddable library
 (`import "github.com/jecklgamis/resonate"`) instead of the CLI or a
 scenario YAML file — see the repo README's ["Using resonate as a Go
-library"](../../README.md#using-resonate-as-a-go-library) section. Eight
+library"](../../README.md#using-resonate-as-a-go-library) section. Nine
 commands, sharing this one `go.mod`: one request-building demo
-(`full-scenario`) and one per execution model, named to match the table in
+(`full-scenario`), one multi-scenario demo (`suite`) and one per execution model, named to match the table in
 the repo README's ["Execution models: open vs.
 closed"](../../README.md#execution-models-open-vs-closed) section
 exactly.
@@ -213,10 +213,41 @@ requests          50
 success rate      100%
 ```
 
+## `suite` — several scenarios at once
+
+`resonate.NewSuite()` runs several scenarios at the same time, each with its
+own load profile: the library counterpart of a scenario file's
+[`scenarios:`](../../docs/multiple-scenarios.md). This demo runs a closed-model
+`browse` workload (20 concurrent users) next to an open-model `checkout`
+workload (40 checkouts a second, starting one second in).
+
+`Defaults` is applied to every `AddWith` scenario before its own settings (here a
+base URL, a timeout and an assertion that each scenario must be at least 99%
+successful), so a scenario only says what is specific to it. A scenario's own
+`Assert` is checked against that scenario alone; `checkout` also asserts the
+p95 of its `pay` step.
+
+```sh
+go run ./suite
+```
+
+```
+scenario   requests       rate   success          p95
+browse       518686 172882.9/s    100.0%    200.575µs
+checkout        237    118.5/s    100.0%  30.359551ms
+combined     518923 171587.3/s    100.0%    200.959µs
+```
+
+Your numbers will differ (the closed-model `browse` runs back to back, so its
+rate depends on the machine), but the shape holds: `Summary.Scenarios` lists
+each scenario's own results in the order they were added, and the headline
+numbers combine them. `checkout` shows slightly more than 40/s × 2s iterations
+for the same reason as the note under `constant-arrival-rate`.
+
 ## Building everything
 
 ```sh
-make build            # bin/full-scenario + one binary per execution model
+make build            # bin/full-scenario, bin/suite + one binary per execution model
 make run-all-models    # run every execution-model demo in sequence
 ```
 

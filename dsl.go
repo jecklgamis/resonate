@@ -720,6 +720,12 @@ func (s *Scenario) Run(ctx context.Context) (Summary, error) {
 	return summary, evaluateAssertions(summary, s.assertions)
 }
 
+// hasRequests reports whether a request, step, message, stream or call has been
+// started on the Scenario — what Suite.Defaults must not do.
+func (s *Scenario) hasRequests() bool {
+	return len(s.targets) > 0 || len(s.flow) > 0 || len(s.setup) > 0 || s.ws != nil || s.sse != nil || s.grpc != nil
+}
+
 // prepare builds the Scenario's Generator and the Options to run it with —
 // everything Run does before the load starts. Per-step assertions must name a
 // step this scenario has, and assertions marked Abort are handed to the engine

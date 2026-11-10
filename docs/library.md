@@ -236,7 +236,9 @@ if err := resonate.WriteHTMLFile("report.html", summary.HTMLReport()); err != ni
 A `Scenario` is one protocol, and most setters mean something different in each — or nothing. This
 is the whole surface. **✓** applies. **—** doesn't, and is a `Build()`/`Run()` error. **no-op** is
 accepted and does nothing — these are a few long-standing cases (a flow-only setter on a plain `Target`, say),
-kept for compatibility; everything else that can't apply is rejected.
+kept for compatibility; everything else that can't apply is rejected. (`Suite`, which runs several
+`Scenario`s together, has its own methods and is described under
+[Running several scenarios](#running-several-scenarios).)
 
 | Method | HTTP / flow | WebSocket | SSE | gRPC |
 | --- | :---: | :---: | :---: | :---: |
@@ -440,6 +442,9 @@ summary, err := resonate.NewSuite().
 ```
 
 - `Add(name, scenario)` / `AddAfter(name, startAfter, scenario)`: names must be unique.
+- `Defaults(fn...)` with `AddWith(name, build)` / `AddAfterWith(name, startAfter, build)` is for
+  what every scenario shares, the counterpart of a scenario file's shared `http:` section
+  (see below).
 - A `Scenario`'s own `Assert` calls are scoped to that scenario. `Suite.Assert` takes
   run-wide assertions (checked on the combined results), or ones with `Scenario` set.
   An assertion with `Abort` must name a `Scenario`, and tripping it stops every scenario.
@@ -449,6 +454,41 @@ summary, err := resonate.NewSuite().
 - For lower-level control, `resonate.RunMulti(ctx, []resonate.ScenarioSpec{...}, resonate.MultiOptions{})`
   takes ready-made `Generator`s and `Options`, with an `OnResult` callback that is
   called for each result with the scenario's name, one call at a time.
+
+#### Shared defaults
+
+Setting the same `BaseURL` and `Timeout` on every scenario gets repetitive.
+`Defaults` takes a function that is applied to each scenario added with `AddWith`, *before* the
+scenario's own build function, so a setting the scenario makes itself replaces the default:
+
+```go
+summary, err := resonate.NewSuite().
+	Defaults(func(s *resonate.Scenario) *resonate.Scenario {
+		return s.BaseURL("http://localhost:8080").Timeout(5 * time.Second)
+	}).
+	AddWith("browse", func(s *resonate.Scenario) *resonate.Scenario {
+		return s.Get("/products").Workers(50).Duration(2 * time.Minute)
+	}).
+	AddAfterWith("admin", 10*time.Second, func(s *resonate.Scenario) *resonate.Scenario {
+		return s.BaseURL("http://localhost:9090").Get("/stats").Rate(5).Duration(time.Minute) // its own BaseURL wins
+	}).
+	Run(ctx)
+```
+
+- Each scenario is created fresh by every `Run`, with the defaults applied in the order `Defaults`
+  was called (it doesn't matter whether that was before or after `AddWith`).
+- A default is for what *all* scenarios share: `BaseURL`, `Timeout`, TLS and transport options, a
+  `Feeder`, a load setting such as `Duration`, or an `Assert` (which then applies to each scenario on
+  its own). It must **not start a request**: `Get`, `Post`, `Step`, `Header`, `Body` and the like
+  describe one scenario's requests, so a default that does is an error naming the scenario.
+- Defaults do not apply to a `Scenario` passed to `Add`, which is already built.
+- A setting that holds one value (`BaseURL`, `Timeout`, `Feeder`, `Duration`, ...) is replaced by the
+  scenario's own. One that adds to a pool, `Identity`, **adds to** what the default put there. This
+  differs from a scenario file, where a list a scenario sets replaces the shared one.
+- `Add` and `AddWith` can be mixed in one suite.
+
+A runnable version is
+[`examples/dsl-examples/suite`](https://github.com/jecklgamis/resonate/tree/main/examples/dsl-examples/suite).
 
 ## Beyond `Scenario`
 
@@ -577,12 +617,13 @@ streaming call is one `Result` per received message.
 ## Examples project
 
 [`examples/dsl-examples`](https://github.com/jecklgamis/resonate/tree/main/examples/dsl-examples)
-is a full standalone project (its own `go.mod`, `go run .`) with eight
+is a full standalone project (its own `go.mod`, `go run .`) with nine
 commands:
 
 | Command | Demonstrates |
 | --- | --- |
 | `full-scenario` | POST of a randomized JSON payload, a fresh `X-Request-Id` per request, `ExpectStatus`, HTML report |
+| `suite` | Two scenarios at once, each with its own load profile — `NewSuite`, `Defaults`, `AddWith`, scoped assertions |
 | `constant-vus` | Closed, flat — `Workers` alone, no `Rate` |
 | `ramping-vus` | Closed, staged — `Stages` with `Rate` left at `0` |
 | `constant-arrival-rate` | Open, flat — `Rate` + `Workers` + `MaxWorkers` |

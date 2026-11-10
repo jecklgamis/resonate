@@ -28,11 +28,15 @@ import (
 type Suite struct {
 	entries    []suiteEntry
 	assertions []Assertion
+	defaults   []func(*Scenario) *Scenario
 }
 
+// suiteEntry is one scenario of a Suite: a ready-made Scenario (Add), or a
+// function that builds one on top of the suite's defaults (AddWith).
 type suiteEntry struct {
 	name       string
 	scenario   *Scenario
+	build      func(*Scenario) *Scenario
 	startAfter time.Duration
 }
 
@@ -50,6 +54,77 @@ func (u *Suite) Add(name string, s *Scenario) *Suite {
 func (u *Suite) AddAfter(name string, startAfter time.Duration, s *Scenario) *Suite {
 	u.entries = append(u.entries, suiteEntry{name: name, scenario: s, startAfter: startAfter})
 	return u
+}
+
+// Defaults sets up what every scenario added with AddWith or AddAfterWith has in
+// common — the library counterpart of a scenario file's shared http/ws/grpc/sse
+// section. Each such scenario starts as a new Scenario, has every function given
+// here applied to it in the order Defaults was called (whether before or after
+// AddWith), and is then handed to its own build function, so a setting the
+// scenario makes itself replaces the default:
+//
+//	suite := resonate.NewSuite().
+//		Defaults(func(s *resonate.Scenario) *resonate.Scenario {
+//			return s.BaseURL("http://localhost:8080").Timeout(5 * time.Second)
+//		}).
+//		AddWith("browse", func(s *resonate.Scenario) *resonate.Scenario {
+//			return s.Get("/products").Workers(50).Duration(2 * time.Minute)
+//		}).
+//		AddWith("admin", func(s *resonate.Scenario) *resonate.Scenario {
+//			return s.BaseURL("http://localhost:9090").Get("/stats").Rate(5).Duration(2 * time.Minute) // own BaseURL
+//		})
+//
+// A default is for what applies to every scenario: BaseURL, Timeout, TLS and
+// transport options, a Feeder, or even a Duration or an Assert (which then
+// applies to each scenario on its own). It must not start a request —
+// Get/Post/Step/Header/Body and the like describe one scenario's requests and
+// belong in its build function; a default that does fails the run with an error
+// naming the scenario. Defaults do not apply to a Scenario given to Add, which
+// is already built. A setting that holds one value (BaseURL, Timeout, Feeder,
+// Duration, ...) is replaced by the scenario's own; one that adds to a pool
+// (Identity) adds to what the default put there — unlike a scenario file, where
+// a list the scenario sets replaces the shared one.
+func (u *Suite) Defaults(fn ...func(*Scenario) *Scenario) *Suite {
+	u.defaults = append(u.defaults, fn...)
+	return u
+}
+
+// AddWith is Add for a scenario built on the suite's Defaults: build receives a
+// new Scenario with the defaults already applied and returns the finished one
+// (usually the same one, so it can chain). The scenario is built afresh by each
+// Run.
+func (u *Suite) AddWith(name string, build func(*Scenario) *Scenario) *Suite {
+	return u.AddAfterWith(name, 0, build)
+}
+
+// AddAfterWith is AddWith for a scenario that starts startAfter into the run.
+func (u *Suite) AddAfterWith(name string, startAfter time.Duration, build func(*Scenario) *Scenario) *Suite {
+	u.entries = append(u.entries, suiteEntry{name: name, build: build, startAfter: startAfter})
+	return u
+}
+
+// materialize returns the entry's Scenario: the one given to Add, or a new one
+// built from the defaults and the entry's build function.
+func (u *Suite) materialize(e suiteEntry) (*Scenario, error) {
+	if e.build == nil {
+		return e.scenario, nil
+	}
+	s := NewScenario()
+	for i, d := range u.defaults {
+		if d == nil {
+			return nil, fmt.Errorf("default %d is nil", i)
+		}
+		if s = d(s); s == nil {
+			return nil, fmt.Errorf("default %d returned nil (return the *Scenario it was given)", i)
+		}
+		if s.hasRequests() {
+			return nil, fmt.Errorf("default %d starts a request (Get/Post/Step/Header/Body/... belong in the scenario's own build function; a default may only set what every scenario shares)", i)
+		}
+	}
+	if s = e.build(s); s == nil {
+		return nil, fmt.Errorf("build function returned nil (return the *Scenario it was given)")
+	}
+	return s, nil
 }
 
 // Assert adds assertions about the run as a whole: unless an Assertion sets
@@ -85,17 +160,21 @@ func (u *Suite) Run(ctx context.Context) (Summary, error) {
 	specs := make([]ScenarioSpec, len(u.entries))
 	var all []Assertion
 	for i, e := range u.entries {
-		if e.scenario == nil {
+		if e.scenario == nil && e.build == nil {
 			return Summary{}, fmt.Errorf("resonate: scenario %q is nil", e.name)
 		}
-		gen, opts, err := e.scenario.prepare()
+		sc, err := u.materialize(e)
+		if err != nil {
+			return Summary{}, fmt.Errorf("resonate: scenario %q: %w", e.name, err)
+		}
+		gen, opts, err := sc.prepare()
 		if err != nil {
 			return Summary{}, fmt.Errorf("scenario %q: %w", e.name, err)
 		}
 		gens = append(gens, gen)
 		names[i] = e.name
 		specs[i] = ScenarioSpec{Name: e.name, Generator: gen, Options: opts, StartAfter: e.startAfter}
-		for _, a := range e.scenario.assertions {
+		for _, a := range sc.assertions {
 			a.Scenario = e.name // a scenario's own assertions are about that scenario
 			all = append(all, a)
 		}

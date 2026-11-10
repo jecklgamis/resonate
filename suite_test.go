@@ -302,3 +302,190 @@ func TestSuiteClosesItsGenerators(t *testing.T) {
 		}
 	}
 }
+
+func TestSuiteDefaultsApplyToEveryAddWithScenario(t *testing.T) {
+	cs := newCountingServer(t)
+	s, err := resonate.NewSuite().
+		Defaults(func(s *resonate.Scenario) *resonate.Scenario {
+			// BaseURL resolves the relative URLs below; Requests/Workers are shared load.
+			return s.BaseURL(cs.URL).Workers(1).Requests(6)
+		}).
+		AddWith("a", func(s *resonate.Scenario) *resonate.Scenario { return s.Get("/a") }).
+		AddAfterWith("b", 50*time.Millisecond, func(s *resonate.Scenario) *resonate.Scenario { return s.Get("/b") }).
+		Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cs.count("/a") != 6 || cs.count("/b") != 6 || s.Requests != 12 {
+		t.Errorf("a=%d b=%d combined=%d, want 6/6/12: the defaults did not reach both scenarios", cs.count("/a"), cs.count("/b"), s.Requests)
+	}
+	if s.Scenarios[1].StartAfter != 50*time.Millisecond {
+		t.Errorf("AddAfterWith start = %s", s.Scenarios[1].StartAfter)
+	}
+}
+
+func TestSuiteScenarioOwnSettingBeatsTheDefault(t *testing.T) {
+	shared, other := newCountingServer(t), newCountingServer(t)
+	_, err := resonate.NewSuite().
+		Defaults(func(s *resonate.Scenario) *resonate.Scenario { return s.BaseURL(shared.URL).Workers(1).Requests(4) }).
+		AddWith("inherits", func(s *resonate.Scenario) *resonate.Scenario { return s.Get("/x") }).
+		AddWith("overrides", func(s *resonate.Scenario) *resonate.Scenario { return s.BaseURL(other.URL).Get("/x").Requests(9) }).
+		Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shared.count("/x") != 4 || other.count("/x") != 9 {
+		t.Errorf("shared saw %d, other saw %d; want 4 and 9 (the scenario's own BaseURL and Requests win)", shared.count("/x"), other.count("/x"))
+	}
+}
+
+func TestSuiteDefaultsApplyInOrderEvenWhenCalledAfterAddWith(t *testing.T) {
+	cs := newCountingServer(t)
+	_, err := resonate.NewSuite().
+		AddWith("a", func(s *resonate.Scenario) *resonate.Scenario { return s.Get("/a") }). // before Defaults on purpose
+		Defaults(func(s *resonate.Scenario) *resonate.Scenario {
+			return s.BaseURL("http://wrong.invalid").Workers(1).Requests(2)
+		}).
+		Defaults(func(s *resonate.Scenario) *resonate.Scenario { return s.BaseURL(cs.URL).Requests(5) }). // later default wins
+		Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cs.count("/a") != 5 {
+		t.Errorf("hits = %d, want 5 (the later default's BaseURL and Requests)", cs.count("/a"))
+	}
+}
+
+// A default Assert applies to each scenario on its own, like one written in each.
+func TestSuiteDefaultAssertionIsPerScenario(t *testing.T) {
+	cs := newCountingServer(t, "/broken")
+	_, err := resonate.NewSuite().
+		Defaults(func(s *resonate.Scenario) *resonate.Scenario {
+			return s.BaseURL(cs.URL).Workers(1).Requests(10).Assert(resonate.Assertion{Metric: "success_rate", Min: ptr(0.99)})
+		}).
+		AddWith("healthy", func(s *resonate.Scenario) *resonate.Scenario { return s.Get("/fine") }).
+		AddWith("broken", func(s *resonate.Scenario) *resonate.Scenario { return s.Get("/broken") }).
+		Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "1 of 2 assertion(s) failed") || !strings.Contains(err.Error(), "success_rate{scenario=broken}") {
+		t.Errorf("err = %v, want only the broken scenario to fail its copy of the default assertion", err)
+	}
+}
+
+// Defaults are for what scenarios share; they do not reach a ready-made
+// Scenario given to Add.
+func TestSuiteDefaultsDoNotTouchAddedScenarios(t *testing.T) {
+	cs := newCountingServer(t)
+	_, err := resonate.NewSuite().
+		Defaults(func(s *resonate.Scenario) *resonate.Scenario { return s.BaseURL(cs.URL) }).
+		Add("prebuilt", resonate.NewScenario().Get("/relative").Workers(1).Requests(1)).
+		Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `scenario "prebuilt"`) {
+		t.Errorf("err = %v: a prebuilt scenario with a relative URL must not have been given the default BaseURL", err)
+	}
+	if cs.total() != 0 {
+		t.Errorf("sent %d request(s)", cs.total())
+	}
+}
+
+func TestSuiteMaterializesScenariosFreshOnEveryRun(t *testing.T) {
+	cs := newCountingServer(t)
+	suite := resonate.NewSuite().
+		Defaults(func(s *resonate.Scenario) *resonate.Scenario { return s.BaseURL(cs.URL).Workers(1).Requests(3) }).
+		AddWith("a", func(s *resonate.Scenario) *resonate.Scenario { return s.Get("/a") })
+	for i := 1; i <= 2; i++ {
+		if _, err := suite.Run(context.Background()); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+		if got := cs.count("/a"); got != 3*i {
+			t.Fatalf("after run %d the server saw %d, want %d: a second Run must behave like the first", i, got, 3*i)
+		}
+	}
+}
+
+func TestSuiteRejectsBadDefaultsAndBuildFunctions(t *testing.T) {
+	cs := newCountingServer(t)
+	get := func(s *resonate.Scenario) *resonate.Scenario { return s.Get(cs.URL + "/x").Workers(1).Requests(1) }
+	keep := func(s *resonate.Scenario) *resonate.Scenario { return s }
+	// bounded ends after one request, so a missing check fails the test instead of running forever.
+	bounded := func(s *resonate.Scenario) *resonate.Scenario { return s.Workers(1).Requests(1) }
+	tests := []struct {
+		name  string
+		suite *resonate.Suite
+		want  string
+	}{
+		{"default starts a request", resonate.NewSuite().Defaults(func(s *resonate.Scenario) *resonate.Scenario { return s.Get(cs.URL + "/d") }).AddWith("a", bounded), "starts a request"},
+		{"default sets a header", resonate.NewSuite().Defaults(func(s *resonate.Scenario) *resonate.Scenario { return s.Header("X", "y") }).AddWith("a", get), "starts a request"},
+		{"default starts a flow step", resonate.NewSuite().Defaults(func(s *resonate.Scenario) *resonate.Scenario { return s.Step("GET", cs.URL) }).AddWith("a", get), "starts a request"},
+		{"default returns nil", resonate.NewSuite().Defaults(func(s *resonate.Scenario) *resonate.Scenario { return nil }).AddWith("a", get), "returned nil"},
+		{"nil default", resonate.NewSuite().Defaults(nil).AddWith("a", get), "default 0 is nil"},
+		{"build returns nil", resonate.NewSuite().AddWith("a", func(*resonate.Scenario) *resonate.Scenario { return nil }), "build function returned nil"},
+		{"nil build function", resonate.NewSuite().AddWith("a", nil), "is nil"},
+		{"build leaves no request", resonate.NewSuite().Defaults(func(s *resonate.Scenario) *resonate.Scenario { return s.BaseURL(cs.URL) }).AddWith("a", keep), `scenario "a"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.suite.Run(context.Background())
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want it to contain %q", err, tt.want)
+			}
+			if !strings.Contains(err.Error(), `"a"`) {
+				t.Errorf("err = %v should name the scenario", err)
+			}
+			if cs.total() != 0 {
+				t.Errorf("sent %d request(s) for an invalid suite", cs.total())
+			}
+		})
+	}
+}
+
+// Add and AddWith can be mixed in one suite, in the order given.
+func TestSuiteMixesAddAndAddWith(t *testing.T) {
+	cs := newCountingServer(t)
+	s, err := resonate.NewSuite().
+		Defaults(func(s *resonate.Scenario) *resonate.Scenario { return s.BaseURL(cs.URL).Workers(1).Requests(3) }).
+		Add("plain", resonate.NewScenario().Get(cs.URL+"/plain").Workers(1).Requests(2)).
+		AddWith("shared", func(s *resonate.Scenario) *resonate.Scenario { return s.Get("/shared") }).
+		Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cs.count("/plain") != 2 || cs.count("/shared") != 3 {
+		t.Errorf("plain=%d shared=%d, want 2 and 3", cs.count("/plain"), cs.count("/shared"))
+	}
+	if s.Scenarios[0].Name != "plain" || s.Scenarios[1].Name != "shared" {
+		t.Errorf("order = %s, %s", s.Scenarios[0].Name, s.Scenarios[1].Name)
+	}
+}
+
+// Single-valued settings are replaced by the scenario's own, but Identity adds
+// to a pool, so a scenario's identities are added to the defaults' — the
+// documented difference from a scenario file, where a list is replaced.
+func TestSuiteIdentityAddsToTheDefaultsPool(t *testing.T) {
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen[r.Header.Get("X-User")] = true
+		mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := resonate.NewSuite().
+		Defaults(func(s *resonate.Scenario) *resonate.Scenario {
+			return s.Identity(map[string]string{"user": "from-default"})
+		}).
+		AddWith("a", func(s *resonate.Scenario) *resonate.Scenario {
+			return s.Identity(map[string]string{"user": "from-scenario"}).
+				Step("GET", srv.URL).Header("X-User", "{{.Identity.user}}").
+				Workers(2).Requests(20)
+		}).
+		Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !seen["from-default"] || !seen["from-scenario"] {
+		t.Errorf("identities used = %v, want both the default's and the scenario's (the pool is added to)", seen)
+	}
+}
