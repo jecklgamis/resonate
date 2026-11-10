@@ -99,7 +99,10 @@ func (c *protoCodec) encode(jsonBody string) ([]byte, error) {
 	if err := unmarshalGRPCMessage(jsonBody, msg); err != nil {
 		return nil, err
 	}
-	return proto.Marshal(msg)
+	// Deterministic: dynamicpb otherwise emits fields in map-iteration order,
+	// so the same message could encode to different bytes per request — which
+	// would defeat a server-side cache keyed on the request body.
+	return proto.MarshalOptions{Deterministic: true}.Marshal(msg)
 }
 
 // decode turns a binary protobuf response into protobuf JSON, for the check

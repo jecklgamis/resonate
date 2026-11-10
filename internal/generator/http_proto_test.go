@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -212,5 +213,30 @@ func TestHTTPProtoBodyBadJSONFailsTheRequest(t *testing.T) {
 	res := g.Do(context.Background(), 0)[0]
 	if res.Success() || res.Error == nil || !strings.Contains(res.Error.Error(), "perf.Search") {
 		t.Fatalf("want an encoding error naming the type, got success=%v err=%v", res.Success(), res.Error)
+	}
+}
+
+// dynamicpb emits fields in map-iteration order unless marshalling is
+// deterministic; identical messages must encode to identical bytes (a server
+// cache keyed on the request body would otherwise see different keys).
+func TestHTTPProtoEncodeIsDeterministic(t *testing.T) {
+	pf := writeProto(t)
+	c, err := newProtoCodec(&ProtoBody{Files: []string{pf}, Request: "perf.Search"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const body = `{"origin":"SEA","dest":"BOS","dates":["2027-01-01","2027-01-08"]}`
+	first, err := c.encode(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 500; i++ {
+		got, err := c.encode(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, first) {
+			t.Fatalf("encode #%d differed: %x vs %x", i, got, first)
+		}
 	}
 }
