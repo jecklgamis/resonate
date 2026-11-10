@@ -490,21 +490,37 @@ func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Da
 
 	var bodyBytes []byte
 	var n int64
-	body := io.Reader(resp.Body)
-	if maxBody > 0 {
-		body = io.LimitReader(resp.Body, maxBody)
+	needBody := len(extract) > 0 || len(f.expectBody) > 0
+	body, decoded, decErr := decodeResponseBody(resp)
+	if decErr != nil {
+		// Unknown/broken encoding: only fatal when a check or extract needs
+		// the body; otherwise count the raw bytes like any other response.
+		body = resp.Body
 	}
-	if len(extract) > 0 || len(f.expectBody) > 0 {
-		bodyBytes, _ = io.ReadAll(body)
+	if maxBody > 0 {
+		body = io.LimitReader(body, maxBody)
+	}
+	var readErr error
+	if needBody {
+		bodyBytes, readErr = io.ReadAll(body)
 		n = int64(len(bodyBytes))
 	} else {
-		n, _ = io.Copy(io.Discard, body)
+		n, readErr = io.Copy(io.Discard, body)
 	}
 	if maxBody > 0 && n >= maxBody {
 		// Drain and discard whatever's left so the connection can still be
 		// reused, without counting it into BytesIn or extract's/expect_body's
 		// buffer.
 		io.Copy(io.Discard, resp.Body)
+	}
+	// A body read error is only attributable to us when we were decoding:
+	// otherwise it stays ignored, as it always was.
+	var encodingErr error
+	switch {
+	case decErr != nil && needBody:
+		encodingErr = decErr
+	case decoded && readErr != nil:
+		encodingErr = fmt.Errorf("decoding %s response: %w", resp.Header.Get("Content-Encoding"), readErr)
 	}
 	latency := time.Since(start)
 
@@ -567,13 +583,25 @@ func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Da
 			}
 		}
 
-		if decodeErr != nil {
-			matched = false
-			reasons = append(reasons, decodeErr.Error())
-		}
 		result.successOverride = &matched
 		if !matched {
 			result.Error = fmt.Errorf("check failed: %s", strings.Join(reasons, "; "))
+		}
+	}
+
+	// A body we couldn't decode (content-encoding or protobuf) is a failed
+	// request whatever criteria the target set — a corrupt payload must not
+	// pass just because nothing inspected it.
+	for _, e := range []error{encodingErr, decodeErr} {
+		if e == nil {
+			continue
+		}
+		failed := false
+		result.successOverride = &failed
+		if result.Error == nil {
+			result.Error = e
+		} else {
+			result.Error = fmt.Errorf("%w; %s", result.Error, e)
 		}
 	}
 

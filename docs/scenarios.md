@@ -178,6 +178,25 @@ least one nested `steps` entry, and nest freely. A failed request step
 stops the whole flow, unwinding out of every enclosing block. See
 [`examples/http-flow-control.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-flow-control.yaml).
 
+## Compression
+
+Responses are decompressed before anything looks at them, so `expect_body`, `extract` and
+the `bytes_in` totals see the real payload.
+
+- **Default:** with no `Accept-Encoding` header of your own, resonate negotiates gzip and
+  decodes it (Go's standard behaviour).
+- **Your own `Accept-Encoding`:** set it under `headers` to test other codings, e.g.
+  `Accept-Encoding: gzip, deflate, br, zstd`. resonate decodes **gzip, deflate, brotli (`br`)
+  and zstd**, including stacked codings such as `gzip, br`.
+- `bytes_in` counts the **decoded** bytes, not what crossed the wire, and `max_response_body`
+  caps decoded bytes too.
+- A body that fails to decode (truncated or corrupt) fails the request, whatever else the
+  target checks. An encoding resonate doesn't know (e.g. `compress`) fails only when
+  `expect_body`/`extract` need the body; otherwise the raw bytes are counted.
+
+Compressed **request** bodies aren't supported, and SSE streams are only decoded when resonate
+negotiated the encoding itself (no `Accept-Encoding` of your own).
+
 ## Protobuf over HTTP
 
 For a plain-HTTP API that speaks `application/x-protobuf`, add a `proto:` block to a

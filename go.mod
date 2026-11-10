@@ -5,9 +5,11 @@ go 1.27.3
 require (
 	github.com/HdrHistogram/hdrhistogram-go v1.4.0
 	github.com/PuerkitoBio/goquery v1.13.0
+	github.com/andybalholm/brotli v1.3.0
 	github.com/antchfx/xmlquery v1.5.1
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/coder/websocket v1.8.15
+	github.com/klauspost/compress v1.20.3
 	github.com/ohler55/ojg v1.28.6
 	github.com/quic-go/quic-go v0.65.0
 	github.com/spf13/cobra v1.10.2
@@ -28,7 +30,6 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
