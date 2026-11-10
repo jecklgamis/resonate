@@ -2,6 +2,7 @@
 - [Install](install.md)
 - [Usage](usage.md)
 - [Scenarios](scenarios.md)
+  - [Multiple Scenarios](multiple-scenarios.md)
 - [Feeders](feeders.md)
   - [Kafka Feeder](kafka-feeder.md)
 - [gRPC](grpc.md)

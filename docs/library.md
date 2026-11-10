@@ -412,6 +412,44 @@ checks the assertions), with the offending call named, rather than showing up as
   with TLS options, a streaming-only field on a unary gRPC call, a missing proto/CA/cert file. For gRPC with no
   `ProtoFiles`/`DescriptorSet`, `Build()` also performs server reflection, so an unreachable server fails here.
 
+### Running several scenarios
+
+`Suite` is the library counterpart of a scenario file's
+[`scenarios:`](multiple-scenarios.md): it runs several `Scenario`s at the same time, each
+with its own load profile, and returns one `Summary` that combines them
+(`Summary.Scenarios` has each one's own, in the order added). Build each `Scenario` as
+usual (any protocol, any execution model) and hand it to the suite:
+
+```go
+p95 := 0.8 // seconds
+
+browse := resonate.NewScenario().
+	Get(base + "/products").Name("products").
+	Workers(50).Duration(2 * time.Minute)
+
+checkout := resonate.NewScenario().
+	Step("POST", base+"/cart").Name("add").
+	Step("POST", base+"/pay").Name("pay").
+	Rate(20).MaxWorkers(300).Duration(2 * time.Minute).
+	Assert(resonate.Assertion{Metric: "latency_p95", Step: "pay", Max: &p95}) // about checkout alone
+
+summary, err := resonate.NewSuite().
+	Add("browse", browse).
+	AddAfter("checkout", 10*time.Second, checkout). // starts 10s into the run
+	Run(ctx)
+```
+
+- `Add(name, scenario)` / `AddAfter(name, startAfter, scenario)`: names must be unique.
+- A `Scenario`'s own `Assert` calls are scoped to that scenario. `Suite.Assert` takes
+  run-wide assertions (checked on the combined results), or ones with `Scenario` set.
+  An assertion with `Abort` must name a `Scenario`, and tripping it stops every scenario.
+- `Run` builds and validates everything first, so a mistake in any scenario fails before a
+  request is sent; it closes every generator; and like `Scenario.Run` it returns the
+  `Summary` alongside an error when assertions fail or the run is aborted.
+- For lower-level control, `resonate.RunMulti(ctx, []resonate.ScenarioSpec{...}, resonate.MultiOptions{})`
+  takes ready-made `Generator`s and `Options`, with an `OnResult` callback that is
+  called for each result with the scenario's name, one call at a time.
+
 ## Beyond `Scenario`
 
 `Scenario` covers every protocol, feeders, and assertions, but the

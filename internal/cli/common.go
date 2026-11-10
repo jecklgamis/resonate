@@ -150,6 +150,9 @@ type resultsWriter struct {
 // (most error implementations have no exported fields), so it's flattened
 // to a message string here instead.
 type resultRecord struct {
+	// Scenario names the scenario of a multi-scenario run that made the
+	// request; absent in a single-scenario run.
+	Scenario   string    `json:"scenario,omitempty"`
 	Timestamp  time.Time `json:"timestamp"`
 	LatencyMS  float64   `json:"latency_ms"`
 	StatusCode int       `json:"status_code"`
@@ -168,8 +171,13 @@ func newResultsWriter(path string) (*resultsWriter, error) {
 	return &resultsWriter{f: f, w: w, enc: json.NewEncoder(w)}, nil
 }
 
-func (rw *resultsWriter) onResult(r generator.Result) {
+func (rw *resultsWriter) onResult(r generator.Result) { rw.onResultFor("", r) }
+
+// onResultFor records r, tagged with the scenario that made it ("" for a
+// single-scenario run).
+func (rw *resultsWriter) onResultFor(scenario string, r generator.Result) {
 	rec := resultRecord{
+		Scenario:   scenario,
 		Timestamp:  r.Timestamp,
 		LatencyMS:  float64(r.Latency) / float64(time.Millisecond),
 		StatusCode: r.StatusCode,
@@ -299,6 +307,12 @@ func dryRun(ctx context.Context, a generator.Generator, jsonOut bool) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(results)
 	}
+	printDryRunResults(results)
+	return nil
+}
+
+// printDryRunResults prints one iteration's results, one line each.
+func printDryRunResults(results []generator.Result) {
 	for i, r := range results {
 		status := "ok"
 		if r.Error != nil {
@@ -309,7 +323,6 @@ func dryRun(ctx context.Context, a generator.Generator, jsonOut bool) error {
 		fmt.Printf("[%d] %s  status=%d  latency=%s  bytes_out=%d  bytes_in=%d  %s\n",
 			i, r.Protocol, r.StatusCode, r.Latency.Round(time.Microsecond), r.BytesOut, r.BytesIn, status)
 	}
-	return nil
 }
 
 // progressPrinter accumulates result counts via engine.Options.OnResult

@@ -5,7 +5,9 @@ reusable load tests in YAML. This page covers `http.targets`/`http.flow`,
 base URLs, feeders, identities, control flow, WebSocket, Server-Sent Events,
 gRPC, and assertions —
 see [Execution Models](execution-models.md) for the `load:` block
-(`rate`, `workers`, `stages`, `iterations`).
+(`rate`, `workers`, `stages`, `iterations`), and
+[Multiple Scenarios](multiple-scenarios.md) to run several workloads at once, each with
+its own load profile.
 
 For machine-readable schema discovery, run `resonate schema`. The
 same JSON Schema is checked into the repository at
@@ -494,6 +496,9 @@ assertions:
 ```
 
 Failures name the step: `latency_p95{step=login}: got 412ms, want <= 300ms`.
+
+In a file with [`scenarios:`](multiple-scenarios.md#assertions), add `scenario:` as well to
+scope an assertion to one scenario.
 
 ### Stopping a run early
 

@@ -39,6 +39,22 @@ type Assertion = report.Assertion
 // Summary.Steps.
 type StepSummary = report.StepSummary
 
+// ScenarioSummary is one scenario's results in a multi-scenario run; see
+// Summary.Scenarios. It embeds that scenario's own Summary.
+type ScenarioSummary = report.ScenarioSummary
+
+// ValidateScenarios rejects an Assertion whose Scenario isn't one of known.
+func ValidateScenarios(assertions []Assertion, known []string) error {
+	return report.ValidateScenarios(assertions, known)
+}
+
+// ValidateScopedSteps is ValidateSteps for a multi-scenario run, where an
+// assertion's Step is looked up in the scenario it is scoped to (see
+// StepLookup).
+func ValidateScopedSteps(assertions []Assertion, steps func(scenario string) (known []string, supported bool)) error {
+	return report.ValidateScopedSteps(assertions, steps)
+}
+
 // ValidateSteps rejects an Assertion whose Step names a step that isn't in
 // known (a typo would otherwise surface only after the run); supported is
 // false for a scenario with no per-step breakdown.

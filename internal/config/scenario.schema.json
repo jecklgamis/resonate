@@ -16,69 +16,89 @@
       "$ref": "#/$defs/load"
     },
     "http": {
-      "$ref": "#/$defs/http"
+      "$ref": "#/$defs/httpPartial"
     },
     "ws": {
-      "$ref": "#/$defs/websocket"
+      "$ref": "#/$defs/websocketPartial"
     },
     "grpc": {
-      "$ref": "#/$defs/grpc"
+      "$ref": "#/$defs/grpcPartial"
     },
     "sse": {
-      "$ref": "#/$defs/sse"
+      "$ref": "#/$defs/ssePartial"
     },
     "assertions": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/assertion"
       }
+    },
+    "scenarios": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Named scenarios that run concurrently, each with its own load profile. The top-level http/ws/grpc/sse sections then hold defaults each scenario of that protocol inherits (a key a scenario sets replaces the shared one), and the top-level load must not be set.",
+      "additionalProperties": {
+        "$ref": "#/$defs/scenario"
+      }
     }
   },
-  "required": ["load"],
   "allOf": [
     {
       "if": {
-        "properties": {
-          "protocol": {
-            "const": "ws"
-          }
-        },
-        "required": ["protocol"]
+        "required": ["scenarios"]
       },
       "then": {
-        "required": ["ws"],
         "not": {
-          "anyOf": [
-            {
-              "required": ["http"]
-            },
-            {
-              "required": ["grpc"]
-            },
-            {
-              "required": ["sse"]
-            }
-          ]
+          "required": ["load"]
         }
+      },
+      "else": {
+        "required": ["load"]
+      }
+    },
+    {
+      "if": {
+        "required": ["scenarios"]
+      },
+      "else": {
+        "properties": {
+          "http": {
+            "$ref": "#/$defs/http"
+          },
+          "ws": {
+            "$ref": "#/$defs/websocket"
+          },
+          "grpc": {
+            "$ref": "#/$defs/grpc"
+          },
+          "sse": {
+            "$ref": "#/$defs/sse"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["scenarios"]
       },
       "else": {
         "if": {
           "properties": {
             "protocol": {
-              "const": "grpc"
+              "const": "ws"
             }
           },
           "required": ["protocol"]
         },
         "then": {
-          "required": ["grpc"],
+          "required": ["ws"],
           "not": {
             "anyOf": [
               {
                 "required": ["http"]
               },
               {
-                "required": ["ws"]
+                "required": ["grpc"]
               },
               {
                 "required": ["sse"]
@@ -90,13 +110,13 @@
           "if": {
             "properties": {
               "protocol": {
-                "const": "sse"
+                "const": "grpc"
               }
             },
             "required": ["protocol"]
           },
           "then": {
-            "required": ["sse"],
+            "required": ["grpc"],
             "not": {
               "anyOf": [
                 {
@@ -106,25 +126,51 @@
                   "required": ["ws"]
                 },
                 {
-                  "required": ["grpc"]
+                  "required": ["sse"]
                 }
               ]
             }
           },
           "else": {
-            "required": ["http"],
-            "not": {
-              "anyOf": [
-                {
-                  "required": ["ws"]
-                },
-                {
-                  "required": ["grpc"]
-                },
-                {
-                  "required": ["sse"]
+            "if": {
+              "properties": {
+                "protocol": {
+                  "const": "sse"
                 }
-              ]
+              },
+              "required": ["protocol"]
+            },
+            "then": {
+              "required": ["sse"],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": ["http"]
+                  },
+                  {
+                    "required": ["ws"]
+                  },
+                  {
+                    "required": ["grpc"]
+                  }
+                ]
+              }
+            },
+            "else": {
+              "required": ["http"],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": ["ws"]
+                  },
+                  {
+                    "required": ["grpc"]
+                  },
+                  {
+                    "required": ["sse"]
+                  }
+                ]
+              }
             }
           }
         }
@@ -921,6 +967,11 @@
           "pattern": "^(requests|success|success_rate|error_rate|rate|latency_(min|mean|stddev|max|p(100(\\.0+)?|([0-9]|[1-9][0-9])(\\.[0-9]+)?)))$",
           "description": "Metric to evaluate; percentile metrics may use latency_p<N>, where N is between 0 and 100."
         },
+        "scenario": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Scope the assertion to one named scenario of a file with scenarios: instead of the combined results. Combines with step. Not valid in a single-scenario file."
+        },
         "step": {
           "type": "string",
           "minLength": 1,
@@ -1042,6 +1093,333 @@
           }
         }
       ]
+    },
+    "httpPartial": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Independent requests, selected round-robin per iteration.",
+          "items": {
+            "$ref": "#/$defs/request"
+          }
+        },
+        "flow": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Ordered requests run per iteration; extracted values are available as .Vars.<name> in later steps.",
+          "items": {
+            "$ref": "#/$defs/flowEntry"
+          }
+        },
+        "setup": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Steps run once per virtual user before its first flow iteration.",
+          "items": {
+            "$ref": "#/$defs/flowEntry"
+          }
+        },
+        "identities": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/identity"
+          },
+          "description": "Sticky per-virtual-user template data; only used with flow."
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "base_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Prepended to request URLs that start with /."
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "insecure": {
+          "type": "boolean",
+          "description": "Skip TLS certificate verification."
+        },
+        "no_follow_redirects": {
+          "type": "boolean"
+        },
+        "max_idle_conns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum idle connections per target host; 0 uses Go's default."
+        },
+        "max_response_body": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum response body bytes read and counted per request; 0 is unlimited."
+        },
+        "cert_file": {
+          "type": "string"
+        },
+        "key_file": {
+          "type": "string"
+        },
+        "ca_file": {
+          "type": "string"
+        },
+        "h2c": {
+          "type": "boolean",
+          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options, http3 and disable_keepalive."
+        },
+        "http3": {
+          "type": "boolean",
+          "description": "Use HTTP/3 (QUIC over UDP) for every request. Every url must be https://. Mutually exclusive with h2c and disable_keepalive."
+        },
+        "disable_keepalive": {
+          "type": "boolean",
+          "description": "Disable connection reuse; mutually exclusive with h2c and http3."
+        }
+      },
+      "description": "Like http, but with nothing required: a default shared by the scenarios of a file with scenarios:, or one scenario's overrides of it. A scenario's merged section is checked when the scenario is built."
+    },
+    "websocketPartial": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^(wss?://|\\{\\{)",
+          "description": "WebSocket URL; supports templates."
+        },
+        "headers": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/wsMessage"
+          }
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "insecure": {
+          "type": "boolean"
+        }
+      },
+      "description": "Like websocket, but with nothing required: a default shared by the scenarios of a file with scenarios:, or one scenario's overrides of it. A scenario's merged section is checked when the scenario is built."
+    },
+    "grpcPartial": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Like grpc, but with nothing required: a default shared by the scenarios of a file with scenarios:, or one scenario's overrides of it. A scenario's merged section is checked when the scenario is built.",
+      "properties": {
+        "address": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Server address, host:port."
+        },
+        "plaintext": {
+          "type": "boolean",
+          "description": "Connect without TLS. Mutually exclusive with insecure, ca_file, cert_file and key_file."
+        },
+        "insecure": {
+          "type": "boolean",
+          "description": "Skip TLS certificate verification."
+        },
+        "ca_file": {
+          "type": "string"
+        },
+        "cert_file": {
+          "type": "string"
+        },
+        "key_file": {
+          "type": "string"
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "connections": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Spread virtual users over this many gRPC connections (default 1). A server typically allows ~100 concurrent streams per connection; raise this at high concurrency."
+        },
+        "proto_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": ".proto sources to compile. Mutually exclusive with descriptor_set."
+        },
+        "import_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Roots that proto_files and their imports resolve against; defaults to the directories containing proto_files."
+        },
+        "descriptor_set": {
+          "type": "string",
+          "description": "A FileDescriptorSet file from protoc --descriptor_set_out=FILE --include_imports. Mutually exclusive with proto_files."
+        },
+        "metadata": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "calls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/grpcCall"
+          }
+        }
+      }
+    },
+    "ssePartial": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Like sse, but with nothing required: a default shared by the scenarios of a file with scenarios:, or one scenario's overrides of it. A scenario's merged section is checked when the scenario is built.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^(https?://|\\{\\{)",
+          "description": "Stream URL; supports templates."
+        },
+        "method": {
+          "type": "string",
+          "description": "HTTP method; defaults to GET."
+        },
+        "query": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "headers": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "body": {
+          "type": "string",
+          "description": "Request body template."
+        },
+        "body_file": {
+          "type": "string",
+          "description": "Path to a request body file; its contents are templated."
+        },
+        "raw_body_file": {
+          "type": "string",
+          "description": "Path to a request body file sent as-is, without templating. Takes priority over body and body_file."
+        },
+        "compress": {
+          "type": "string",
+          "enum": [
+            "gzip",
+            "deflate",
+            "br",
+            "zstd"
+          ],
+          "description": "Compress the request body (after any proto encoding) and set Content-Encoding unless headers already does. Not valid with raw_body_file."
+        },
+        "events": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "End the stream successfully after this many events; the stream closing or duration/timeout elapsing first is a failure. 0 means no event target."
+        },
+        "duration": {
+          "$ref": "#/$defs/duration"
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "insecure": {
+          "type": "boolean"
+        },
+        "max_response_body": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum bytes read per stream; 0 is unlimited."
+        },
+        "cert_file": {
+          "type": "string"
+        },
+        "key_file": {
+          "type": "string"
+        },
+        "ca_file": {
+          "type": "string"
+        },
+        "h2c": {
+          "type": "boolean",
+          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options and http3."
+        },
+        "http3": {
+          "type": "boolean",
+          "description": "Use HTTP/3 (QUIC over UDP). The url must be https://. Mutually exclusive with h2c."
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "load"
+      ],
+      "description": "One scenario of a file with scenarios:. It has the same load profile and protocol section a single-scenario file has, plus start_after. Its protocol section is merged over the file's top-level section of the same name.",
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "enum": [
+            "http",
+            "ws",
+            "grpc",
+            "sse"
+          ],
+          "description": "This scenario's protocol; defaults to the file's protocol (itself defaulting to http)."
+        },
+        "start_after": {
+          "$ref": "#/$defs/duration",
+          "description": "Start this scenario this long after the run begins (default: immediately). Not counted in its own duration."
+        },
+        "load": {
+          "$ref": "#/$defs/load"
+        },
+        "http": {
+          "$ref": "#/$defs/httpPartial"
+        },
+        "ws": {
+          "$ref": "#/$defs/websocketPartial"
+        },
+        "grpc": {
+          "$ref": "#/$defs/grpcPartial"
+        },
+        "sse": {
+          "$ref": "#/$defs/ssePartial"
+        }
+      }
     }
   }
 }

@@ -166,6 +166,30 @@
     </table>
   </div>
 
+  {{if .S.Scenarios}}
+  <h2>Scenarios</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Scenario</th><th class="num">Starts after</th><th class="num">Requests</th><th class="num">Rate</th><th class="num">Success</th><th class="num">p50</th><th class="num">p95</th><th class="num">p99</th><th class="num">Max</th></tr></thead>
+      <tbody>
+      {{range .S.Scenarios}}
+        <tr>
+          <td>{{.Name}}{{if .Aborted}} <span class="badge fail">ABORTED</span>{{end}}</td>
+          <td class="num">{{roundMs .StartAfter}}</td>
+          <td class="num">{{.Requests}}</td>
+          <td class="num">{{printf "%.1f/s" .Rate}}</td>
+          <td class="num">{{printf "%.1f%%" (mul100 .SuccessRate)}}</td>
+          <td class="num">{{roundUs .Latencies.P50}}</td>
+          <td class="num">{{roundUs .Latencies.P95}}</td>
+          <td class="num">{{roundUs .Latencies.P99}}</td>
+          <td class="num">{{roundUs .Latencies.Max}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+
   {{if gt (len .S.Steps) 1}}
   <h2>Steps</h2>
   <div class="panel">

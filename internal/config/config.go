@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"time"
@@ -18,6 +19,13 @@ type Scenario struct {
 	GRPC       GRPCConfig        `yaml:"grpc"`
 	SSE        SSEConfig         `yaml:"sse"`
 	Assertions []AssertionConfig `yaml:"assertions"`
+
+	// Scenarios, if non-empty, makes this a multi-scenario file: several
+	// named scenarios run concurrently, each with its own load profile. The
+	// top-level http/ws/grpc/sse sections then hold defaults every scenario
+	// of that protocol inherits, and the top-level load must be left unset.
+	// See ScenarioSet and Resolve.
+	Scenarios ScenarioSet `yaml:"scenarios,omitempty"`
 }
 
 // AssertionConfig checks one metric of the completed run's report against
@@ -31,6 +39,11 @@ type Scenario struct {
 // always a plain percentage (10 means ±10%), regardless of metric.
 type AssertionConfig struct {
 	Metric string `yaml:"metric"`
+
+	// Scenario scopes the assertion to one named scenario of a file with
+	// scenarios:, instead of the combined results of all of them. Combines
+	// with Step. Not valid in a single-scenario file.
+	Scenario string `yaml:"scenario"`
 
 	// Step scopes the assertion to one named target or flow step (its
 	// name:, or "METHOD url" when unnamed) instead of the whole run. HTTP
@@ -665,6 +678,18 @@ func Load(path string) (*Scenario, error) {
 	var s Scenario
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+	if len(s.Scenarios) > 0 {
+		// A file with scenarios: is held to strict decoding throughout, so a
+		// typo in a shared section or an assertion fails here rather than being
+		// dropped. (A single-scenario file keeps its long-standing lenient
+		// behaviour: unknown keys are ignored.)
+		var strict Scenario
+		dec := yaml.NewDecoder(bytes.NewReader(data))
+		dec.KnownFields(true)
+		if err := dec.Decode(&strict); err != nil {
+			return nil, fmt.Errorf("parsing config: %w", err)
+		}
 	}
 	return &s, nil
 }

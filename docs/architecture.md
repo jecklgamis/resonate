@@ -56,7 +56,8 @@ What an iteration produces:
   to be added here, deliberately. `dsl.go`'s `Scenario` is the exception — a fluent builder
   with its own state (the current request or message, a control-flow block stack) layered
   on top, covering HTTP targets and flows, WebSocket, and HTTP/3 (`HTTP3()`). SSE and gRPC
-  are used through their struct APIs. See [Library](library.md).
+  are used through their struct APIs. `dsl_suite.go`'s `Suite` runs several `Scenario`s at
+  once, each with its own load. See [Library](library.md).
 - **`internal/generator`** — the `Generator` interface and its implementations:
   - `http.go` — `HTTPGenerator` and the machinery shared by every HTTP-based
     generator: `compileHTTPFields`, `buildRequest`, `doHTTP`, `newHTTPClient`
@@ -77,18 +78,24 @@ What an iteration produces:
   headers and bodies. See [Request Templating](usage.md#request-templating).
 - **`internal/engine`** — the worker pool and rate limiter that drive a `Generator`
   (flat closed model, open model, or a staged ramp), and each virtual user's lifetime
-  (`load.iterations`). See [Execution Models](execution-models.md).
+  (`load.iterations`). See [Execution Models](execution-models.md). `multi.go`'s `RunMulti`
+  runs several generators concurrently, each with its own `Options`, and combines their
+  results ([Multiple Scenarios](multiple-scenarios.md)).
 - **`internal/report`** — `report.go` aggregates results into latency percentiles
   (an HDR histogram, so memory is fixed), success rate, throughput and status/error
   breakdowns, including a per-step breakdown (`steps.go`); `assert.go` evaluates `assertions:` against a finished `Summary` (or a run in progress, for abort-on-threshold);
+  `scenarios.go` holds the per-scenario summaries of a multi-scenario run;
   `compare.go` diffs two JSON reports for `resonate compare`;
   `html.go` renders the self-contained HTML report (its charts are server-side SVG
   and CSS, with no JavaScript).
 - **`internal/config`** — the YAML scenario schema and loader, and the embedded JSON
-  Schema (`scenario.schema.json`, printed by `resonate schema`).
+  Schema (`scenario.schema.json`, printed by `resonate schema`). `scenarios.go` handles
+  the `scenarios:` section: ordered, strictly decoded, with the shared sections merged
+  into each scenario on the YAML nodes.
 - **`internal/cli`** — the Cobra commands. `hit.go` and `run.go` build a generator and
   engine options, then call `runAndReport` in `common.go`, which owns progress output,
-  the reports, assertions and the exit code.
+  the reports, assertions and the exit code; `run_multi.go` is the same for a file with
+  `scenarios:`.
 - **`cmd/resonate`** is the binary; **`cmd/gendocs`** regenerates the
   [CLI Reference](cli/resonate.md) from the cobra command tree.
 

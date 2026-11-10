@@ -19,6 +19,14 @@ import (
 type Assertion struct {
 	Metric string
 
+	// Scenario, if set, scopes the assertion to one named scenario of a
+	// multi-scenario run instead of the combined results: Metric (and Step,
+	// if also set) is then computed over just that scenario's requests. It is
+	// only meaningful against a Summary that has Scenarios (see
+	// engine.RunMulti); a scenario that doesn't appear in it fails the
+	// assertion rather than passing vacuously.
+	Scenario string
+
 	// Step, if set, scopes the assertion to the named target/flow step
 	// (Result.Step) instead of the whole run: Metric is then computed over
 	// just that step's requests. A step that made no requests fails the
@@ -171,23 +179,32 @@ func containsFloat(vs []float64, v float64) bool {
 
 // Failure describes one assertion that didn't hold.
 type Failure struct {
-	Metric  string
-	Step    string // set for a step-scoped assertion
-	Actual  float64
-	Reasons []string // one entry per condition set on the assertion (see Assertion.describe)
+	Metric   string
+	Scenario string // set for a scenario-scoped assertion
+	Step     string // set for a step-scoped assertion
+	Actual   float64
+	Reasons  []string // one entry per condition set on the assertion (see Assertion.describe)
 }
 
-// label names the assertion's subject: "latency_p95", or
-// "latency_p95{step=login}" for a step-scoped one.
-func assertionLabel(metric, step string) string {
-	if step == "" {
+// assertionLabel names the assertion's subject: "latency_p95", or
+// "latency_p95{step=login}" / "latency_p95{scenario=checkout,step=pay}" for a
+// scoped one.
+func assertionLabel(metric, scenario, step string) string {
+	var scopes []string
+	if scenario != "" {
+		scopes = append(scopes, "scenario="+scenario)
+	}
+	if step != "" {
+		scopes = append(scopes, "step="+step)
+	}
+	if len(scopes) == 0 {
 		return metric
 	}
-	return fmt.Sprintf("%s{step=%s}", metric, step)
+	return fmt.Sprintf("%s{%s}", metric, strings.Join(scopes, ","))
 }
 
 func (f Failure) String() string {
-	return fmt.Sprintf("%s: got %s, %s", assertionLabel(f.Metric, f.Step), formatMetricValue(f.Metric, f.Actual), strings.Join(f.Reasons, "; "))
+	return fmt.Sprintf("%s: got %s, %s", assertionLabel(f.Metric, f.Scenario, f.Step), formatMetricValue(f.Metric, f.Actual), strings.Join(f.Reasons, "; "))
 }
 
 // formatMetricValue renders v as a duration ("500ms") for a latency
@@ -285,6 +302,17 @@ func (m metricSet) value(metric string) (float64, error) {
 // run's, or its Step's. ok is false when a names a step that recorded no
 // requests (the caller decides what that means); err is an unknown metric.
 func (s Summary) assertionValue(a Assertion) (actual float64, ok bool, err error) {
+	if a.Scenario != "" {
+		if !IsKnownAssertionMetric(a.Metric) {
+			_, err = metricSet{}.value(a.Metric)
+			return 0, false, err
+		}
+		sc, found := s.scenario(a.Scenario)
+		if !found {
+			return 0, false, nil
+		}
+		s = sc
+	}
 	if a.Step == "" {
 		actual, err = s.metricValue(a.Metric)
 		return actual, true, err
@@ -327,16 +355,28 @@ func (s Summary) evaluate(assertions []Assertion, partial bool) ([]Failure, erro
 			continue
 		}
 		if !ok {
-			failures = append(failures, Failure{Metric: a.Metric, Step: a.Step, Reasons: []string{
-				fmt.Sprintf("step %q recorded no requests (steps seen: %s)", a.Step, stepList(s.stepNames())),
-			}})
+			failures = append(failures, Failure{Metric: a.Metric, Scenario: a.Scenario, Step: a.Step, Reasons: []string{s.missingReason(a)}})
 			continue
 		}
 		if a.violated(actual) {
-			failures = append(failures, Failure{Metric: a.Metric, Step: a.Step, Actual: actual, Reasons: a.describe()})
+			failures = append(failures, Failure{Metric: a.Metric, Scenario: a.Scenario, Step: a.Step, Actual: actual, Reasons: a.describe()})
 		}
 	}
 	return failures, nil
+}
+
+// missingReason explains why assertionValue found nothing to check a against:
+// its scenario isn't in the summary, or its step made no requests.
+func (s Summary) missingReason(a Assertion) string {
+	base := s
+	if a.Scenario != "" {
+		sc, found := s.scenario(a.Scenario)
+		if !found {
+			return fmt.Sprintf("scenario %q recorded no requests (scenarios seen: %s)", a.Scenario, stepList(s.scenarioNames()))
+		}
+		base = sc
+	}
+	return fmt.Sprintf("step %q recorded no requests (steps seen: %s)", a.Step, stepList(base.stepNames()))
 }
 
 func stepList(names []string) string {

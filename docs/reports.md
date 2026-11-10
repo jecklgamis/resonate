@@ -31,6 +31,11 @@ each step's requests, success rate and p50/p95/p99. See
 assertion ends with an `ABORTED: ...` line (see
 [Stopping a run early](scenarios.md#stopping-a-run-early)).
 
+### Scenarios
+
+A file with [`scenarios:`](multiple-scenarios.md) prints the combined summary first, then a
+`Scenario: <name>` section with the same lines for each scenario.
+
 ### What counts as a request
 
 For HTTP, one request is one HTTP call. The other protocols report in finer
@@ -157,9 +162,12 @@ stopped the run early). The HTML report shows them as a *Steps* table and an *AB
 - Stable `report.json` fields: `requests`, `success`, `success_rate`, `duration`
   (nanoseconds), `requests_per_sec`, `bytes_in`, `bytes_out`, `latencies.*` (`min`, `mean`,
   `stddev`, `p50`, `p75`, `p90`, `p95`, `p99`, `max`; nanoseconds), `status_codes`, `errors`,
-  `steps`, `aborted`, `time_series` and `latency_histogram`.
+  `steps`, `aborted`, `time_series` and `latency_histogram`. A run of a file with
+  [`scenarios:`](multiple-scenarios.md#the-report) adds a `scenarios` array (each entry has these
+  same fields plus `name` and `start_after`); a single-scenario report has no such key.
 - Stable `results.jsonl` fields per line: `timestamp` (RFC 3339), `latency_ms`,
-  `status_code`, `bytes_in`, `bytes_out`, `protocol` and `error` (only on failure).
+  `status_code`, `bytes_in`, `bytes_out`, `protocol` and `error` (only on failure). A run of
+  a file with `scenarios:` also writes `scenario` (the scenario that made the request).
 - The `resonate run` flags `--quiet`, `--html-report`, `--json-report` and `--results-file`,
   and the [exit codes](usage.md#exit-codes), are stable too.
 

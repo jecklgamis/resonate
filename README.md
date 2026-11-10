@@ -46,7 +46,7 @@ Every run writes a stdout summary plus `report.html`/`report.json`/
 scenarios in YAML, see [docs/usage.md](docs/usage.md) and
 [docs/scenarios.md](docs/scenarios.md); for gRPC (unary and streaming), the
 [gRPC guide](docs/grpc.md); for Server-Sent Events, the [SSE guide](docs/sse.md); for HTTP/3, the
-[HTTP/3 guide](docs/http3.md).
+[HTTP/3 guide](docs/http3.md); to run several workloads at once, each with its own load profile, [multiple scenarios](docs/multiple-scenarios.md).
 
 ## Go library
 

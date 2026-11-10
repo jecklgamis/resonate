@@ -101,7 +101,7 @@ func assertionResults(s Summary, assertions []Assertion, failures []Failure) []a
 	}
 	failed := make(map[string]bool, len(failures))
 	for _, f := range failures {
-		failed[assertionLabel(f.Metric, f.Step)] = true
+		failed[assertionLabel(f.Metric, f.Scenario, f.Step)] = true
 	}
 	results := make([]assertionResult, 0, len(assertions))
 	for _, a := range assertions {
@@ -109,11 +109,11 @@ func assertionResults(s Summary, assertions []Assertion, failures []Failure) []a
 		if err != nil {
 			continue
 		}
-		label := assertionLabel(a.Metric, a.Step)
+		label := assertionLabel(a.Metric, a.Scenario, a.Step)
 		isFailed := failed[label] || !ok
-		detail := Failure{Metric: a.Metric, Step: a.Step, Actual: actual, Reasons: a.describe()}.String()
+		detail := Failure{Metric: a.Metric, Scenario: a.Scenario, Step: a.Step, Actual: actual, Reasons: a.describe()}.String()
 		if !ok {
-			detail = fmt.Sprintf("%s: step %q recorded no requests", label, a.Step)
+			detail = fmt.Sprintf("%s: %s", label, s.missingReason(a))
 		}
 		results = append(results, assertionResult{Assertion: a, Label: label, Passed: !isFailed, Detail: detail})
 	}

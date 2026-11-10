@@ -122,7 +122,9 @@ load:
 ```
 
 This avoids slamming a service with instant full load. `stages` is only
-available via scenario files, not `resonate hit`. See
+available via scenario files, not `resonate hit`. To run several workloads at the
+same time, each with its own profile (say a closed-model ramp next to an open-model
+constant arrival rate), see [Multiple Scenarios](multiple-scenarios.md). See
 [`examples/http-stages.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-stages.yaml).
 
 ## Virtual User Lifecycle

@@ -707,21 +707,37 @@ func (s *Scenario) Build() (Generator, error) {
 // unrecognized — same semantics as resonate run/resonate hit's assertion
 // gating, just as a Go error instead of a process exit code.
 func (s *Scenario) Run(ctx context.Context) (Summary, error) {
-	gen, err := s.Build()
+	gen, opts, err := s.prepare()
 	if err != nil {
 		return Summary{}, err
 	}
 	defer gen.Close()
 
-	// Per-step assertions must name a step this scenario has, and assertions
-	// marked Abort are handed to the engine to watch while the run is going.
+	summary := Run(ctx, gen, opts)
+	if summary.Aborted != "" {
+		return summary, fmt.Errorf("resonate: run aborted: %s", summary.Aborted)
+	}
+	return summary, evaluateAssertions(summary, s.assertions)
+}
+
+// prepare builds the Scenario's Generator and the Options to run it with —
+// everything Run does before the load starts. Per-step assertions must name a
+// step this scenario has, and assertions marked Abort are handed to the engine
+// (as Options.AbortOn) to watch while the run is going. On error nothing is
+// left open.
+func (s *Scenario) prepare() (Generator, Options, error) {
+	gen, err := s.Build()
+	if err != nil {
+		return nil, Options{}, err
+	}
 	sn, hasSteps := gen.(interface{ StepNames() []string })
 	var known []string
 	if hasSteps {
 		known = sn.StepNames()
 	}
 	if err := ValidateSteps(s.assertions, known, hasSteps); err != nil {
-		return Summary{}, fmt.Errorf("resonate: %w", err)
+		gen.Close()
+		return nil, Options{}, fmt.Errorf("resonate: %w", err)
 	}
 	opts := s.opts
 	for _, a := range s.assertions {
@@ -730,26 +746,28 @@ func (s *Scenario) Run(ctx context.Context) (Summary, error) {
 		}
 	}
 	if err := ValidateAbort(opts.AbortOn); err != nil {
-		return Summary{}, fmt.Errorf("resonate: %w", err)
+		gen.Close()
+		return nil, Options{}, fmt.Errorf("resonate: %w", err)
 	}
+	return gen, opts, nil
+}
 
-	summary := Run(ctx, gen, opts)
-	if summary.Aborted != "" {
-		return summary, fmt.Errorf("resonate: run aborted: %s", summary.Aborted)
+// evaluateAssertions checks assertions against summary and folds any failures
+// into one error (nil if they all hold, or there are none), the way Run does.
+func evaluateAssertions(summary Summary, assertions []Assertion) error {
+	if len(assertions) == 0 {
+		return nil
 	}
-	if len(s.assertions) == 0 {
-		return summary, nil
-	}
-	failures, err := summary.Evaluate(s.assertions)
+	failures, err := summary.Evaluate(assertions)
 	if err != nil {
-		return summary, err
+		return err
 	}
 	if len(failures) == 0 {
-		return summary, nil
+		return nil
 	}
 	reasons := make([]string, len(failures))
 	for i, f := range failures {
 		reasons[i] = f.String()
 	}
-	return summary, fmt.Errorf("resonate: %d of %d assertion(s) failed: %s", len(failures), len(s.assertions), strings.Join(reasons, "; "))
+	return fmt.Errorf("resonate: %d of %d assertion(s) failed: %s", len(failures), len(assertions), strings.Join(reasons, "; "))
 }

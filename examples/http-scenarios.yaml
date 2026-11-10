@@ -1,0 +1,37 @@
+# Two workloads at once, each with its own load profile. See
+# docs/multiple-scenarios.md.
+protocol: http
+
+# Shared by every scenario (a scenario's own keys replace these).
+http:
+  base_url: http://localhost:8080
+  timeout: 5s
+
+scenarios:
+  # Closed model: ramp up to 50 concurrent users, then hold.
+  browse:
+    load:
+      stages:
+        - { duration: 10s, workers: 50 }
+        - { duration: 30s, workers: 50 }
+    http:
+      targets:
+        - { name: products, method: GET, url: /products }
+
+  # Open model: 20 new checkouts a second, starting 5s into the run.
+  checkout:
+    start_after: 5s
+    load:
+      duration: 30s
+      rate: 20
+      workers: 20
+      max_workers: 300
+    http:
+      flow:
+        - { name: add, method: POST, url: /cart, extract: { cart_id: "json:id" }, pause: 1s }
+        - { name: pay, method: POST, url: "/cart/{{.Vars.cart_id}}/pay" }
+
+assertions:
+  - { metric: success_rate, min: "0.99" }                                  # everything combined
+  - { scenario: browse, metric: latency_p95, max: 300ms }                  # browse alone
+  - { scenario: checkout, step: pay, metric: latency_p99, max: 1s }        # one step of checkout

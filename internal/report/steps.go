@@ -149,15 +149,39 @@ func sortedStepNames(steps []StepSummary) []string {
 // don't name their requests, where no step assertion can ever match.
 func ValidateSteps(assertions []Assertion, known []string, supported bool) error {
 	for i, a := range assertions {
+		if err := checkStep(i, a, known, supported); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ValidateScopedSteps is ValidateSteps for a multi-scenario run, where an
+// assertion's step is looked up in the scenario it is scoped to (or, with no
+// scenario, in the combined run). steps returns that scope's step names and
+// whether its protocol names steps at all.
+func ValidateScopedSteps(assertions []Assertion, steps func(scenario string) (known []string, supported bool)) error {
+	for i, a := range assertions {
 		if a.Step == "" {
 			continue
 		}
-		if !supported {
-			return fmt.Errorf("assertions[%d] (%s): step %q: per-step assertions only apply to http scenarios", i, a.Metric, a.Step)
+		known, supported := steps(a.Scenario)
+		if err := checkStep(i, a, known, supported); err != nil {
+			return err
 		}
-		if !slices.Contains(known, a.Step) {
-			return fmt.Errorf("assertions[%d] (%s): unknown step %q (steps: %s)", i, a.Metric, a.Step, stepList(known))
-		}
+	}
+	return nil
+}
+
+func checkStep(i int, a Assertion, known []string, supported bool) error {
+	if a.Step == "" {
+		return nil
+	}
+	if !supported {
+		return fmt.Errorf("assertions[%d] (%s): step %q: per-step assertions only apply to http scenarios", i, a.Metric, a.Step)
+	}
+	if !slices.Contains(known, a.Step) {
+		return fmt.Errorf("assertions[%d] (%s): unknown step %q (steps: %s)", i, a.Metric, a.Step, stepList(known))
 	}
 	return nil
 }

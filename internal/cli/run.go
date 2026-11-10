@@ -47,6 +47,14 @@ func newRunCommand() *cobra.Command {
 				return usageError(err)
 			}
 
+			if len(scenario.Scenarios) > 0 {
+				assertions, err := assertionsFrom(scenario.Assertions)
+				if err != nil {
+					return err
+				}
+				return runMultiFile(args[0], scenario, runOpts{JSON: jsonOut, Quiet: quiet, DryRun: dryRun, Assertions: assertions, HTMLReport: htmlReport, JSONReport: jsonReport, ResultsFile: resultsFile, Title: args[0]})
+			}
+
 			opts, err := loadOptionsFrom(scenario.Load)
 			if err != nil {
 				return err
@@ -54,6 +62,11 @@ func newRunCommand() *cobra.Command {
 			assertions, err := assertionsFrom(scenario.Assertions)
 			if err != nil {
 				return err
+			}
+			for i, a := range assertions {
+				if a.Scenario != "" {
+					return fmt.Errorf("assertions[%d] (%s): scenario %q: scenario-scoped assertions only apply to a file with scenarios:", i, a.Metric, a.Scenario)
+				}
 			}
 			opts.AbortOn = abortRules(assertions)
 			if err := engine.Validate(opts); err != nil {
@@ -108,7 +121,7 @@ func assertionsFrom(cfgs []config.AssertionConfig) ([]report.Assertion, error) {
 // report.Assertion, returning how many conditions were set (0 is an error
 // the caller reports, so every field's parse error can be surfaced first).
 func assertionFrom(i int, c config.AssertionConfig) (report.Assertion, int, error) {
-	a := report.Assertion{Metric: c.Metric, Step: c.Step, AroundExclusive: c.AroundExclusive, DeviatesExclusive: c.DeviatesExclusive, Abort: c.Abort}
+	a := report.Assertion{Metric: c.Metric, Scenario: c.Scenario, Step: c.Step, AroundExclusive: c.AroundExclusive, DeviatesExclusive: c.DeviatesExclusive, Abort: c.Abort}
 	set := 0
 
 	if c.AbortAfter != "" && !c.Abort {

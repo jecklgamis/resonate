@@ -148,6 +148,12 @@ type Summary struct {
 	// their requests.
 	Steps []StepSummary `json:"steps,omitempty"`
 
+	// Scenarios breaks a multi-scenario run down per scenario, in the order
+	// they were configured; each entry is that scenario's own Summary, while
+	// everything above is the combined result of all of them. Empty for a
+	// single-scenario run.
+	Scenarios []ScenarioSummary `json:"scenarios,omitempty"`
+
 	// Aborted, if set, is why the run was stopped early: an assertion marked
 	// abort that failed while the run was still going (see Assertion.Abort).
 	// The numbers cover only what ran before the stop.
@@ -443,9 +449,10 @@ func (s Summary) Print(w io.Writer) {
 	if s.Aborted != "" {
 		fmt.Fprintf(w, "ABORTED: %s\n", s.Aborted)
 	}
-	if s.Saturated {
+	if s.Saturated && len(s.Scenarios) == 0 { // a multi-scenario run's own sections say which scenario, and how far
 		fmt.Fprintf(w, "warning: target rate could not always be sustained — peak concurrency hit %d in-flight iterations; raise --max-workers to open more headroom\n", s.PeakConcurrency)
 	}
+	s.printScenarios(w)
 }
 
 // PrintJSON writes the summary as JSON.
