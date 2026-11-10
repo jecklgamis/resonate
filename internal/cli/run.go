@@ -295,6 +295,7 @@ func buildHTTPGenerator(cfg config.HTTPConfig) (generator.Generator, error) {
 			ExpectHeaders: t.ExpectHeaders,
 			ExpectBody:    t.ExpectBody,
 			Proto:         protoBodyFrom(t.Proto),
+			Compress:      t.Compress,
 		})
 	}
 	return generator.NewHTTPGenerator(targets, opts)
@@ -393,6 +394,7 @@ func resolveStep(s config.HTTPTargetConfig) (generator.FlowStep, error) {
 		ExpectHeaders: s.ExpectHeaders,
 		ExpectBody:    s.ExpectBody,
 		Proto:         protoBodyFrom(s.Proto),
+		Compress:      s.Compress,
 		Pause:         pause,
 		PauseMax:      pauseMax,
 	}, nil
@@ -572,6 +574,7 @@ func buildSSEGenerator(cfg config.SSEConfig) (generator.Generator, error) {
 		Header:   cfg.Headers,
 		Body:     body,
 		RawBody:  rawBody,
+		Compress: cfg.Compress,
 		Events:   cfg.Events,
 		Duration: duration,
 	}, opts)

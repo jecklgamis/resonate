@@ -72,6 +72,14 @@ type HTTPTarget struct {
 	// as protobuf JSON) and optionally decodes the response for
 	// ExpectBody/Extract. See ProtoBody. Mutually exclusive with RawBody.
 	Proto *ProtoBody
+
+	// Compress, if set ("gzip", "deflate", "br" or "zstd"), compresses the
+	// request body — after any Proto encoding — and sets Content-Encoding
+	// unless the target already does. A body with no {{ }} is compressed once
+	// at construction and reused. BytesOut reports the compressed size sent.
+	// Mutually exclusive with RawBody, which is sent exactly as given (it may
+	// already be compressed).
+	Compress string
 }
 
 // HTTPOptions configures the transport shared by all requests.
@@ -277,6 +285,9 @@ type httpFields struct {
 	expectHeaders map[string]string
 	expectBody    map[string]string
 	proto         *protoCodec // non-nil: body is protobuf JSON, sent as binary protobuf
+	compress      string      // "" or a validated request coding
+	staticBody    []byte      // non-nil: the final (encoded, compressed) body of a {{ }}-free target
+	bodyIsStatic  bool        // body template has no {{ }}
 }
 
 func compileHTTPFields(method, rawURL string, query, header map[string]string, body string, rawBody []byte, baseURL string, expectStatus []int, expectHeaders, expectBody map[string]string) (httpFields, error) {
@@ -336,7 +347,7 @@ func compileHTTPFields(method, rawURL string, query, header map[string]string, b
 		}
 	}
 
-	return httpFields{method: method, rawURL: rawURL, url: urlField, query: q, header: h, body: bodyField, rawBody: rawBody, expectStatus: expectStatus, expectHeaders: expectHeaders, expectBody: expectBody}, nil
+	return httpFields{method: method, rawURL: rawURL, url: urlField, query: q, header: h, body: bodyField, rawBody: rawBody, expectStatus: expectStatus, expectHeaders: expectHeaders, expectBody: expectBody, bodyIsStatic: !strings.Contains(body, "{{")}, nil
 }
 
 // withProto attaches p's codec to f, rejecting combinations that can't work:
@@ -354,6 +365,53 @@ func (f httpFields) withProto(p *ProtoBody) (httpFields, error) {
 	}
 	f.proto = c
 	return f, nil
+}
+
+// withCompress turns on request-body compression with the given coding. It
+// must run after withProto: a body with no {{ }} is then encoded and
+// compressed once, here, so a bad static body fails at construction and every
+// request reuses the bytes.
+func (f httpFields) withCompress(coding string) (httpFields, error) {
+	if coding == "" {
+		return f, nil
+	}
+	c, err := validateRequestCoding(coding)
+	if err != nil {
+		return httpFields{}, err
+	}
+	if f.rawBody != nil {
+		return httpFields{}, fmt.Errorf("compress and raw body are mutually exclusive: a raw body is sent exactly as given")
+	}
+	f.compress = c
+	if f.bodyIsStatic {
+		b, err := f.encodeBody(tmpl.Data{})
+		if err != nil {
+			return httpFields{}, err
+		}
+		if len(b) > 0 { // an empty body stays empty: no gzip header with nothing in it
+			if f.staticBody, err = compressRequestBody(c, b); err != nil {
+				return httpFields{}, err
+			}
+		}
+	}
+	return f, nil
+}
+
+// encodeBody renders the body template and, with a proto codec, encodes it to
+// binary protobuf. It does not compress.
+func (f httpFields) encodeBody(data tmpl.Data) ([]byte, error) {
+	bodyStr, err := f.body.Render(data)
+	if err != nil {
+		return nil, fmt.Errorf("rendering body: %w", err)
+	}
+	if f.proto != nil {
+		b, err := f.proto.encode(bodyStr)
+		if err != nil {
+			return nil, fmt.Errorf("encoding body: %w", err)
+		}
+		return b, nil
+	}
+	return []byte(bodyStr), nil
 }
 
 // resolveBaseURL prepends base to url if url starts with "/".
@@ -417,30 +475,37 @@ func buildRequest(ctx context.Context, f httpFields, data tmpl.Data) (*http.Requ
 
 	var bodyReader io.Reader
 	var bodyLen int
-	if f.rawBody != nil {
+	switch {
+	case f.rawBody != nil:
 		bodyLen = len(f.rawBody)
 		if bodyLen > 0 {
 			bodyReader = bytes.NewReader(f.rawBody)
 		}
-	} else {
+	case f.staticBody != nil:
+		bodyLen = len(f.staticBody)
+		bodyReader = bytes.NewReader(f.staticBody)
+	case f.proto != nil || f.compress != "":
+		b, err := f.encodeBody(data)
+		if err != nil {
+			return nil, 0, err
+		}
+		if f.compress != "" && len(b) > 0 {
+			if b, err = compressRequestBody(f.compress, b); err != nil {
+				return nil, 0, err
+			}
+		}
+		bodyLen = len(b)
+		if bodyLen > 0 {
+			bodyReader = bytes.NewReader(b)
+		}
+	default:
 		bodyStr, err := f.body.Render(data)
 		if err != nil {
 			return nil, 0, fmt.Errorf("rendering body: %w", err)
 		}
-		if f.proto != nil {
-			encoded, err := f.proto.encode(bodyStr)
-			if err != nil {
-				return nil, 0, fmt.Errorf("encoding body: %w", err)
-			}
-			bodyLen = len(encoded)
-			if bodyLen > 0 {
-				bodyReader = bytes.NewReader(encoded)
-			}
-		} else {
-			bodyLen = len(bodyStr)
-			if bodyStr != "" {
-				bodyReader = strings.NewReader(bodyStr)
-			}
+		bodyLen = len(bodyStr)
+		if bodyStr != "" {
+			bodyReader = strings.NewReader(bodyStr)
 		}
 	}
 
@@ -457,6 +522,9 @@ func buildRequest(ctx context.Context, f httpFields, data tmpl.Data) (*http.Requ
 	}
 	if f.proto != nil {
 		setProtoHeaders(req, f.proto)
+	}
+	if f.compress != "" && bodyLen > 0 && req.Header.Get("Content-Encoding") == "" {
+		req.Header.Set("Content-Encoding", f.compress)
 	}
 	return req, bodyLen, nil
 }
@@ -643,6 +711,9 @@ func NewHTTPGenerator(targets []HTTPTarget, opts HTTPOptions) (*HTTPGenerator, e
 			return nil, err
 		}
 		if f, err = f.withProto(t.Proto); err != nil {
+			return nil, err
+		}
+		if f, err = f.withCompress(t.Compress); err != nil {
 			return nil, err
 		}
 		f.name = stepName(t.Name, f)

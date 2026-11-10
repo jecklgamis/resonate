@@ -6,9 +6,11 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/andybalholm/brotli"
@@ -166,5 +168,175 @@ func TestHTTPMaxResponseBodyCapsDecodedBytes(t *testing.T) {
 	res := g.Do(context.Background(), 0)[0]
 	if !res.Success() || res.BytesIn != 1000 {
 		t.Fatalf("success=%v BytesIn=%d, want the cap applied to decoded bytes (1000)", res.Success(), res.BytesIn)
+	}
+}
+
+// ---- request-body compression ----
+
+type seenReq struct {
+	coding string
+	wire   int
+	body   string
+}
+
+// recvServer decodes each request body per its Content-Encoding.
+func recvServer(t *testing.T) (*httptest.Server, func() []seenReq) {
+	t.Helper()
+	var mu sync.Mutex
+	var seen []seenReq
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body := raw
+		coding := r.Header.Get("Content-Encoding")
+		if coding != "" {
+			dec, err := newDecoder(coding, bytes.NewReader(raw))
+			if err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			if body, err = io.ReadAll(dec); err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+		}
+		mu.Lock()
+		seen = append(seen, seenReq{coding, len(raw), string(body)})
+		mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() []seenReq { mu.Lock(); defer mu.Unlock(); return append([]seenReq(nil), seen...) }
+}
+
+func TestHTTPCompressesRequestBody(t *testing.T) {
+	body := `{"data":"` + strings.Repeat("compressible ", 200) + `"}`
+	for _, coding := range []string{"gzip", "deflate", "br", "zstd", "GZIP"} {
+		t.Run(coding, func(t *testing.T) {
+			srv, seen := recvServer(t)
+			g, err := NewHTTPGenerator([]HTTPTarget{{Method: "POST", URL: srv.URL, Body: body, Compress: coding}}, DefaultHTTPOptions())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer g.Close()
+			res := g.Do(context.Background(), 0)[0]
+			if !res.Success() {
+				t.Fatalf("request failed: %v", res.Error)
+			}
+			got := seen()
+			if len(got) != 1 || got[0].body != body || got[0].coding != strings.ToLower(coding) {
+				t.Fatalf("server saw %+v, want the original body under Content-Encoding %s", got, strings.ToLower(coding))
+			}
+			if res.BytesOut != int64(got[0].wire) || res.BytesOut >= int64(len(body))/4 {
+				t.Fatalf("BytesOut = %d, want the compressed wire size (%d), far below %d", res.BytesOut, got[0].wire, len(body))
+			}
+		})
+	}
+}
+
+func TestHTTPCompressTemplatedBodyIsCompressedPerRequest(t *testing.T) {
+	srv, seen := recvServer(t)
+	g, err := NewHTTPGenerator([]HTTPTarget{{Method: "POST", URL: srv.URL, Body: `{"n": {{.Seq}}}`, Compress: "gzip"}}, DefaultHTTPOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	g.Do(context.Background(), 0)
+	g.Do(context.Background(), 0)
+	got := seen()
+	if len(got) != 2 || got[0].body != `{"n": 0}` || got[1].body != `{"n": 1}` {
+		t.Fatalf("server saw %+v, want each request's own rendering", got)
+	}
+}
+
+func TestHTTPCompressStaticBodyIsPrecomputed(t *testing.T) {
+	srv, _ := recvServer(t)
+	g, err := NewHTTPGenerator([]HTTPTarget{{Method: "POST", URL: srv.URL, Body: `{"fixed":true}`, Compress: "zstd"}}, DefaultHTTPOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	if g.targets[0].staticBody == nil {
+		t.Fatal("a {{ }}-free body should be compressed once at construction")
+	}
+}
+
+func TestHTTPCompressKeepsExplicitContentEncoding(t *testing.T) {
+	srv, seen := recvServer(t)
+	g, err := NewHTTPGenerator([]HTTPTarget{{
+		Method: "POST", URL: srv.URL, Body: `{"a":1}`, Compress: "gzip",
+		Header: map[string]string{"Content-Encoding": "x-gzip"},
+	}}, DefaultHTTPOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	g.Do(context.Background(), 0)
+	if got := seen(); len(got) != 1 || got[0].coding != "x-gzip" {
+		t.Fatalf("server saw %+v, want the explicit Content-Encoding kept", got)
+	}
+}
+
+func TestHTTPCompressEmptyBodySendsNothing(t *testing.T) {
+	srv, seen := recvServer(t)
+	g, err := NewHTTPGenerator([]HTTPTarget{{Method: "GET", URL: srv.URL, Compress: "gzip"}}, DefaultHTTPOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	res := g.Do(context.Background(), 0)[0]
+	if got := seen(); len(got) != 1 || got[0].coding != "" || got[0].wire != 0 || res.BytesOut != 0 {
+		t.Fatalf("server saw %+v BytesOut=%d, want no body and no Content-Encoding", got, res.BytesOut)
+	}
+}
+
+func TestHTTPCompressComposesWithProto(t *testing.T) {
+	pf := writeProto(t)
+	srv, seen := recvServer(t)
+	g, err := NewHTTPGenerator([]HTTPTarget{{
+		Method: "POST", URL: srv.URL, Body: `{"origin":"SEA","dest":"BOS"}`,
+		Proto: &ProtoBody{Files: []string{pf}, Request: "perf.Search"}, Compress: "gzip",
+	}}, DefaultHTTPOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	if res := g.Do(context.Background(), 0)[0]; !res.Success() {
+		t.Fatalf("request failed: %v", res.Error)
+	}
+	// What arrives, once gunzipped, is the binary protobuf: field 1 = "SEA", field 2 = "BOS".
+	if got := seen(); len(got) != 1 || got[0].coding != "gzip" || got[0].body != "\x0a\x03SEA\x12\x03BOS" {
+		t.Fatalf("server saw %+v, want protobuf bytes inside gzip", got)
+	}
+}
+
+func TestHTTPCompressInFlowStep(t *testing.T) {
+	srv, seen := recvServer(t)
+	g, err := NewFlowGenerator([]FlowStep{{Method: "POST", URL: srv.URL, Body: `{"x":1}`, Compress: "br"}}, nil, FlowOptions{HTTP: DefaultHTTPOptions()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	g.Do(context.Background(), 0)
+	if got := seen(); len(got) != 1 || got[0].coding != "br" || got[0].body != `{"x":1}` {
+		t.Fatalf("server saw %+v", got)
+	}
+}
+
+func TestHTTPCompressConstructionErrors(t *testing.T) {
+	for name, c := range map[string]struct {
+		t    HTTPTarget
+		want string
+	}{
+		"unknown coding": {HTTPTarget{URL: "http://x", Body: "a", Compress: "lz4"}, `invalid compress "lz4"`},
+		"raw body":       {HTTPTarget{URL: "http://x", RawBody: []byte("a"), Compress: "gzip"}, "mutually exclusive"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := NewHTTPGenerator([]HTTPTarget{c.t}, DefaultHTTPOptions())
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+	if _, err := NewSSEGenerator(SSETarget{URL: "http://x", Compress: "lz4"}, DefaultSSEOptions()); err == nil || !strings.Contains(err.Error(), "invalid compress") {
+		t.Fatalf("SSE: err = %v, want an invalid-compress error", err)
 	}
 }

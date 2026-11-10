@@ -50,6 +50,9 @@ type FlowStep struct {
 	// response — see HTTPTarget.Proto.
 	Proto *ProtoBody
 
+	// Compress compresses the request body — see HTTPTarget.Compress.
+	Compress string
+
 	// Pause, if > 0, sleeps this long immediately before this step's
 	// request — think-time between steps. If PauseMax is
 	// also set (and greater than Pause), the sleep is a random duration
@@ -243,6 +246,9 @@ func compileStep(s FlowStep, baseURL string) (compiledStep, error) {
 		return compiledStep{}, err
 	}
 	if f, err = f.withProto(s.Proto); err != nil {
+		return compiledStep{}, err
+	}
+	if f, err = f.withCompress(s.Compress); err != nil {
 		return compiledStep{}, err
 	}
 	f.name = stepName(s.Name, f)

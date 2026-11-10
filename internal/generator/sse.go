@@ -31,6 +31,10 @@ type SSETarget struct {
 	Body    string
 	RawBody []byte // sent as-is, bypassing templating; mutually exclusive with Body
 
+	// Compress compresses the request body ("gzip", "deflate", "br" or
+	// "zstd") — see HTTPTarget.Compress.
+	Compress string
+
 	// Events, if > 0, ends the stream successfully once this many events have
 	// arrived. The stream closing — or Duration / the transport Timeout
 	// elapsing — before then is a failure.
@@ -99,6 +103,9 @@ func NewSSEGenerator(target SSETarget, opts SSEOptions) (*SSEGenerator, error) {
 
 	f, err := compileHTTPFields(target.Method, target.URL, target.Query, target.Header, target.Body, target.RawBody, opts.HTTP.BaseURL, nil, nil, nil)
 	if err != nil {
+		return nil, err
+	}
+	if f, err = f.withCompress(target.Compress); err != nil {
 		return nil, err
 	}
 

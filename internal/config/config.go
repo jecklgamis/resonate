@@ -322,6 +322,11 @@ type HTTPTargetConfig struct {
 	// ExpectBody/Extract. Not valid with RawBodyFile. See ProtoConfig.
 	Proto *ProtoConfig `yaml:"proto"`
 
+	// Compress compresses the request body ("gzip", "deflate", "br" or
+	// "zstd") and sets Content-Encoding unless Headers already does. Applied
+	// after Proto encoding. Not valid with RawBodyFile.
+	Compress string `yaml:"compress"`
+
 	Extract map[string]string `yaml:"extract"`
 
 	// Pause, if set, sleeps this long immediately before this step's
@@ -466,6 +471,10 @@ type SSEConfig struct {
 	Body        string `yaml:"body"`
 	BodyFile    string `yaml:"body_file"`
 	RawBodyFile string `yaml:"raw_body_file"`
+
+	// Compress compresses the request body ("gzip", "deflate", "br" or
+	// "zstd") and sets Content-Encoding. Not valid with RawBodyFile.
+	Compress string `yaml:"compress"`
 
 	// Events, if > 0, ends the stream successfully after this many events.
 	Events int `yaml:"events"`

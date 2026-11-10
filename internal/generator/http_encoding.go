@@ -2,6 +2,7 @@ package generator
 
 import (
 	"bufio"
+	"bytes"
 	"compress/flate"
 	"compress/gzip"
 	"compress/zlib"
@@ -82,4 +83,49 @@ func newDecoder(coding string, r io.Reader) (io.Reader, error) {
 	default:
 		return nil, fmt.Errorf("unsupported Content-Encoding %q (supported: gzip, deflate, br, zstd)", coding)
 	}
+}
+
+// requestCodings are the Content-Encoding values compressRequestBody can
+// produce, in the order listed in errors and docs.
+var requestCodings = []string{"gzip", "deflate", "br", "zstd"}
+
+func validateRequestCoding(coding string) (string, error) {
+	c := strings.ToLower(strings.TrimSpace(coding))
+	for _, k := range requestCodings {
+		if c == k {
+			return c, nil
+		}
+	}
+	return "", fmt.Errorf("invalid compress %q (expected one of %s)", coding, strings.Join(requestCodings, ", "))
+}
+
+// zstdEncoder is shared: Encoder.EncodeAll is safe for concurrent use, which
+// spares a per-request encoder allocation under load.
+var zstdEncoder, _ = zstd.NewWriter(nil)
+
+// compressRequestBody compresses b with a coding already validated by
+// validateRequestCoding. "deflate" is zlib-wrapped, as RFC 9110 specifies.
+func compressRequestBody(coding string, b []byte) ([]byte, error) {
+	if coding == "zstd" {
+		return zstdEncoder.EncodeAll(b, make([]byte, 0, len(b)/2)), nil
+	}
+	var buf bytes.Buffer
+	var w io.WriteCloser
+	switch coding {
+	case "gzip":
+		w = gzip.NewWriter(&buf)
+	case "deflate":
+		w = zlib.NewWriter(&buf)
+	case "br":
+		w = brotli.NewWriter(&buf)
+	default:
+		return nil, fmt.Errorf("unsupported compress %q", coding)
+	}
+	if _, err := w.Write(b); err != nil {
+		return nil, fmt.Errorf("compressing request body (%s): %w", coding, err)
+	}
+	if err := w.Close(); err != nil {
+		return nil, fmt.Errorf("compressing request body (%s): %w", coding, err)
+	}
+	return buf.Bytes(), nil
 }

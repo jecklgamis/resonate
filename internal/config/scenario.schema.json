@@ -469,6 +469,11 @@
           "type": "string",
           "description": "Path to request body bytes sent without templating."
         },
+        "compress": {
+          "type": "string",
+          "enum": ["gzip", "deflate", "br", "zstd"],
+          "description": "Compress the request body (after any proto encoding) and set Content-Encoding unless headers already does. Not valid with raw_body_file."
+        },
         "proto": {
           "type": "object",
           "description": "Send the body as binary protobuf: body/body_file is protobuf JSON (templated), encoded per request. Not valid with raw_body_file. The schema comes from files or descriptor_set.",
@@ -805,6 +810,11 @@
         "raw_body_file": {
           "type": "string",
           "description": "Path to a request body file sent as-is, without templating. Takes priority over body and body_file."
+        },
+        "compress": {
+          "type": "string",
+          "enum": ["gzip", "deflate", "br", "zstd"],
+          "description": "Compress the request body (after any proto encoding) and set Content-Encoding unless headers already does. Not valid with raw_body_file."
         },
         "events": {
           "type": "integer",

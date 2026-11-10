@@ -194,8 +194,34 @@ the `bytes_in` totals see the real payload.
   target checks. An encoding resonate doesn't know (e.g. `compress`) fails only when
   `expect_body`/`extract` need the body; otherwise the raw bytes are counted.
 
-Compressed **request** bodies aren't supported, and SSE streams are only decoded when resonate
-negotiated the encoding itself (no `Accept-Encoding` of your own).
+SSE streams are only decoded when resonate negotiated the encoding itself (no
+`Accept-Encoding` of your own).
+
+### Compressing the request body
+
+`compress: gzip` (or `deflate`, `br`, `zstd`) on a target, flow step or `sse:` block
+compresses the request body and sets `Content-Encoding` to match — for ingestion endpoints
+(logs, metrics, events, bulk APIs) and any service that takes compressed requests:
+
+```yaml
+http:
+  targets:
+    - method: POST
+      url: http://localhost:8080/ingest
+      compress: gzip
+      body: '{"events": [{"id": "{{uuid}}"}]}'
+```
+
+- It runs **after** `proto:` encoding, so JSON → protobuf → gzip composes.
+- A `Content-Encoding` you set under `headers` is kept as-is.
+- A body with no `{{ }}` is compressed once at construction and reused; a templated body is
+  compressed per request, which costs CPU on the load generator — keep an eye on that at
+  high rates, or use a static body.
+- `bytes_out` is the **compressed** size actually sent.
+- An empty body stays empty. `compress` with `raw_body_file` is rejected (a raw body is sent
+  exactly as given; pre-compress it yourself and set `Content-Encoding`).
+- `deflate` is zlib-wrapped, as the HTTP spec says. Most servers accept only `gzip` for
+  request bodies, so check what yours does.
 
 ## Protobuf over HTTP
 
