@@ -178,6 +178,45 @@ least one nested `steps` entry, and nest freely. A failed request step
 stops the whole flow, unwinding out of every enclosing block. See
 [`examples/http-flow-control.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-flow-control.yaml).
 
+## Protobuf over HTTP
+
+For a plain-HTTP API that speaks `application/x-protobuf`, add a `proto:` block to a
+target or flow step. The `body` (or `body_file`) is written as **protobuf JSON** —
+templated like any other body, so `{{randInt}}`, `{{uuid}}` and feeders work — and is
+encoded to binary protobuf for every request. Nothing is pre-generated, and no `protoc`
+or generated code is needed.
+
+```yaml
+http:
+  targets:
+    - method: POST
+      url: http://localhost:8080/search
+      proto:
+        files: [search.proto]          # or descriptor_set: search.pb
+        request: perf.SearchRequest    # full message name; required
+        response: perf.SearchResponse  # optional: decode the reply for checks
+      body: '{"origin": "{{randChoice "SEA" "LAX"}}", "travelers": 1}'
+      expect_body:
+        "json:offerCount": ""          # the decoded reply is protobuf JSON
+```
+
+- The schema comes from `files` (`.proto` sources, compiled in-process; `import_paths`
+  as for [gRPC](grpc.md)) or `descriptor_set`. They are mutually exclusive.
+- `Content-Type` and `Accept` (when `response` is set) default to
+  `application/x-protobuf`; set either under `headers` to override it, e.g. for
+  `application/protobuf`.
+- With `response`, `expect_body` and `extract` run their `json:` rules against the reply
+  decoded to protobuf JSON (field names in camelCase). Without it they see the raw bytes.
+- A body that doesn't match the request type fails that request, naming the type;
+  an unknown message name, a missing schema, or `proto` together with `raw_body_file`
+  is rejected before the run starts.
+- Reports count `bytes_out` as the encoded size actually sent.
+
+Not covered: gRPC itself (use `protocol: grpc`), compressed request bodies, and
+non-protobuf binary formats (CBOR, MessagePack, Avro).
+
+See [`examples/http-protobuf.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-protobuf.yaml).
+
 ## HTTP/3
 
 `http3: true` under `http:` sends every request over HTTP/3 (HTTP over QUIC, on UDP)

@@ -67,6 +67,11 @@ type HTTPTarget struct {
 	// to evaluate without error (e.g. the JSON/XML path exists). Combines
 	// with ExpectStatus/ExpectHeaders (AND) when set alongside them.
 	ExpectBody map[string]string
+
+	// Proto, if set, sends the body as binary protobuf (the body is written
+	// as protobuf JSON) and optionally decodes the response for
+	// ExpectBody/Extract. See ProtoBody. Mutually exclusive with RawBody.
+	Proto *ProtoBody
 }
 
 // HTTPOptions configures the transport shared by all requests.
@@ -271,6 +276,7 @@ type httpFields struct {
 	expectStatus  []int
 	expectHeaders map[string]string
 	expectBody    map[string]string
+	proto         *protoCodec // non-nil: body is protobuf JSON, sent as binary protobuf
 }
 
 func compileHTTPFields(method, rawURL string, query, header map[string]string, body string, rawBody []byte, baseURL string, expectStatus []int, expectHeaders, expectBody map[string]string) (httpFields, error) {
@@ -331,6 +337,23 @@ func compileHTTPFields(method, rawURL string, query, header map[string]string, b
 	}
 
 	return httpFields{method: method, rawURL: rawURL, url: urlField, query: q, header: h, body: bodyField, rawBody: rawBody, expectStatus: expectStatus, expectHeaders: expectHeaders, expectBody: expectBody}, nil
+}
+
+// withProto attaches p's codec to f, rejecting combinations that can't work:
+// a raw body is already bytes, so there is nothing to encode.
+func (f httpFields) withProto(p *ProtoBody) (httpFields, error) {
+	if p == nil {
+		return f, nil
+	}
+	if f.rawBody != nil {
+		return httpFields{}, fmt.Errorf("proto and raw body are mutually exclusive: proto encodes the (JSON) body itself")
+	}
+	c, err := newProtoCodec(p)
+	if err != nil {
+		return httpFields{}, err
+	}
+	f.proto = c
+	return f, nil
 }
 
 // resolveBaseURL prepends base to url if url starts with "/".
@@ -404,9 +427,20 @@ func buildRequest(ctx context.Context, f httpFields, data tmpl.Data) (*http.Requ
 		if err != nil {
 			return nil, 0, fmt.Errorf("rendering body: %w", err)
 		}
-		bodyLen = len(bodyStr)
-		if bodyStr != "" {
-			bodyReader = strings.NewReader(bodyStr)
+		if f.proto != nil {
+			encoded, err := f.proto.encode(bodyStr)
+			if err != nil {
+				return nil, 0, fmt.Errorf("encoding body: %w", err)
+			}
+			bodyLen = len(encoded)
+			if bodyLen > 0 {
+				bodyReader = bytes.NewReader(encoded)
+			}
+		} else {
+			bodyLen = len(bodyStr)
+			if bodyStr != "" {
+				bodyReader = strings.NewReader(bodyStr)
+			}
 		}
 	}
 
@@ -420,6 +454,9 @@ func buildRequest(ctx context.Context, f httpFields, data tmpl.Data) (*http.Requ
 			return nil, 0, fmt.Errorf("rendering header %q: %w", k, err)
 		}
 		req.Header.Set(k, v)
+	}
+	if f.proto != nil {
+		setProtoHeaders(req, f.proto)
 	}
 	return req, bodyLen, nil
 }
@@ -470,6 +507,11 @@ func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Da
 		io.Copy(io.Discard, resp.Body)
 	}
 	latency := time.Since(start)
+
+	var decodeErr error
+	if f.proto != nil && len(bodyBytes) > 0 {
+		bodyBytes, decodeErr = f.proto.decode(bodyBytes)
+	}
 
 	result := Result{
 		Timestamp:  start,
@@ -525,6 +567,10 @@ func doHTTP(ctx context.Context, client *http.Client, f httpFields, data tmpl.Da
 			}
 		}
 
+		if decodeErr != nil {
+			matched = false
+			reasons = append(reasons, decodeErr.Error())
+		}
 		result.successOverride = &matched
 		if !matched {
 			result.Error = fmt.Errorf("check failed: %s", strings.Join(reasons, "; "))
@@ -566,6 +612,9 @@ func NewHTTPGenerator(targets []HTTPTarget, opts HTTPOptions) (*HTTPGenerator, e
 	for i, t := range targets {
 		f, err := compileHTTPFields(t.Method, t.URL, t.Query, t.Header, t.Body, t.RawBody, opts.BaseURL, t.ExpectStatus, t.ExpectHeaders, t.ExpectBody)
 		if err != nil {
+			return nil, err
+		}
+		if f, err = f.withProto(t.Proto); err != nil {
 			return nil, err
 		}
 		f.name = stepName(t.Name, f)

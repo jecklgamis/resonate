@@ -294,9 +294,24 @@ func buildHTTPGenerator(cfg config.HTTPConfig) (generator.Generator, error) {
 			ExpectStatus:  t.ExpectStatus,
 			ExpectHeaders: t.ExpectHeaders,
 			ExpectBody:    t.ExpectBody,
+			Proto:         protoBodyFrom(t.Proto),
 		})
 	}
 	return generator.NewHTTPGenerator(targets, opts)
+}
+
+// protoBodyFrom converts a YAML proto block to the generator's ProtoBody.
+func protoBodyFrom(p *config.ProtoConfig) *generator.ProtoBody {
+	if p == nil {
+		return nil
+	}
+	return &generator.ProtoBody{
+		Files:         p.Files,
+		ImportPaths:   p.ImportPaths,
+		DescriptorSet: p.DescriptorSet,
+		Request:       p.Request,
+		Response:      p.Response,
+	}
 }
 
 func warnIfBothBodySet(t config.HTTPTargetConfig) {
@@ -377,6 +392,7 @@ func resolveStep(s config.HTTPTargetConfig) (generator.FlowStep, error) {
 		ExpectStatus:  s.ExpectStatus,
 		ExpectHeaders: s.ExpectHeaders,
 		ExpectBody:    s.ExpectBody,
+		Proto:         protoBodyFrom(s.Proto),
 		Pause:         pause,
 		PauseMax:      pauseMax,
 	}, nil

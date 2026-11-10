@@ -19,6 +19,11 @@ type Generator = generator.Generator
 // {{ }} template expressions (see "Request templating" in the README).
 type HTTPTarget = generator.HTTPTarget
 
+// ProtoBody makes an HTTPTarget's or FlowStep's body binary protobuf: the body
+// is written as protobuf JSON and encoded per request, and an optional
+// response type decodes the reply for ExpectBody/Extract.
+type ProtoBody = generator.ProtoBody
+
 // HTTPOptions configures the transport shared by all requests.
 type HTTPOptions = generator.HTTPOptions
 

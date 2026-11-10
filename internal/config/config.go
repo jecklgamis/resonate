@@ -269,6 +269,19 @@ type KafkaFeederConfig struct {
 	PasswordEnv string `yaml:"password_env"`
 }
 
+// ProtoConfig describes protobuf encoding for one HTTP request/response; the
+// schema comes from Files (.proto sources) or DescriptorSet, like gRPC's.
+type ProtoConfig struct {
+	Files         []string `yaml:"files"`
+	ImportPaths   []string `yaml:"import_paths"`
+	DescriptorSet string   `yaml:"descriptor_set"`
+	// Request is the request message's full name, e.g. "pkg.SearchRequest".
+	Request string `yaml:"request"`
+	// Response, optional, is the response message's full name; it lets
+	// expect_body/extract json: rules read the binary response.
+	Response string `yaml:"response"`
+}
+
 // HTTPTargetConfig describes one request template, used for both http.targets
 // and http.flow/http.setup steps. URL, Query, Headers, and Body may all embed
 // {{ }} template expressions (see internal/tmpl), re-rendered independently
@@ -302,6 +315,12 @@ type HTTPTargetConfig struct {
 	// bytes might otherwise be misread as containing "{{ }}" template
 	// syntax. Mutually exclusive with Body/BodyFile.
 	RawBodyFile string `yaml:"raw_body_file"`
+
+	// Proto, if set, makes the request body protobuf: Body/BodyFile is
+	// written as protobuf JSON (templated as usual) and sent as binary
+	// protobuf, and an optional response type decodes the reply for
+	// ExpectBody/Extract. Not valid with RawBodyFile. See ProtoConfig.
+	Proto *ProtoConfig `yaml:"proto"`
 
 	Extract map[string]string `yaml:"extract"`
 

@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package perf;
+
+// Request and response of a protobuf-over-HTTP search API, as used by
+// examples/http-protobuf.yaml.
+message SearchRequest {
+  string origin = 1;
+  string destination = 2;
+  string departure_date = 3;
+  int32 travelers = 4;
+}
+
+message SearchResponse {
+  int32 offer_count = 1;
+  string transaction_id = 2;
+}

@@ -469,6 +469,19 @@
           "type": "string",
           "description": "Path to request body bytes sent without templating."
         },
+        "proto": {
+          "type": "object",
+          "description": "Send the body as binary protobuf: body/body_file is protobuf JSON (templated), encoded per request. Not valid with raw_body_file. The schema comes from files or descriptor_set.",
+          "properties": {
+            "files": {"type": "array", "items": {"type": "string"}, "description": ".proto sources to compile. Mutually exclusive with descriptor_set."},
+            "import_paths": {"type": "array", "items": {"type": "string"}},
+            "descriptor_set": {"type": "string", "description": "A FileDescriptorSet from protoc --descriptor_set_out=FILE --include_imports."},
+            "request": {"type": "string", "description": "Full name of the request message, e.g. pkg.SearchRequest."},
+            "response": {"type": "string", "description": "Full name of the response message; lets expect_body/extract json: rules read the binary reply."}
+          },
+          "required": ["request"],
+          "additionalProperties": false
+        },
         "extract": {
           "$ref": "#/$defs/stringMap",
           "description": "Flow/setup only: map variable names to extraction rules (json:, yaml:, xml:, regex:, css:, header:, or status); ignored on independent targets."

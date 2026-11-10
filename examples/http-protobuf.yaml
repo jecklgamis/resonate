@@ -1,0 +1,38 @@
+# Load a plain-HTTP API that speaks application/x-protobuf.
+#
+# The body is written as protobuf JSON (templated like any other body) and
+# sent as binary protobuf, re-encoded for every request. With `response`
+# set, the binary reply is decoded back to JSON so expect_body/extract
+# `json:` rules work. Content-Type and Accept default to
+# application/x-protobuf; set them under `headers` to override.
+#
+# Point `url` at your service (or use `resonate hit`-style testing with a
+# local one) and run from the repository root:
+#   resonate run examples/http-protobuf.yaml
+protocol: http
+
+load:
+  duration: 10s
+  rate: 20
+  workers: 10
+
+http:
+  timeout: 5s
+  targets:
+    - name: Search
+      method: POST
+      url: http://localhost:8080/search
+      proto:
+        files: [examples/data/search.proto]
+        request: perf.SearchRequest
+        response: perf.SearchResponse
+      body: |
+        {
+          "origin": "{{randChoice "SEA" "LAX" "JFK"}}",
+          "destination": "{{randChoice "BOS" "ORD" "DEN"}}",
+          "departureDate": "{{randDate "2027-01-01T00:00:00Z" "2027-06-30T00:00:00Z" "2006-01-02"}}",
+          "travelers": 1
+        }
+      expect_status: [200]
+      expect_body:
+        "json:transactionId": ""    # just needs to be present

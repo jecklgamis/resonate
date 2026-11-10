@@ -46,6 +46,10 @@ type FlowStep struct {
 	ExpectHeaders map[string]string
 	ExpectBody    map[string]string
 
+	// Proto sends the body as binary protobuf and optionally decodes the
+	// response — see HTTPTarget.Proto.
+	Proto *ProtoBody
+
 	// Pause, if > 0, sleeps this long immediately before this step's
 	// request — think-time between steps. If PauseMax is
 	// also set (and greater than Pause), the sleep is a random duration
@@ -236,6 +240,9 @@ func compileStep(s FlowStep, baseURL string) (compiledStep, error) {
 	}
 	f, err := compileHTTPFields(s.Method, s.URL, s.Query, s.Header, s.Body, s.RawBody, baseURL, s.ExpectStatus, s.ExpectHeaders, s.ExpectBody)
 	if err != nil {
+		return compiledStep{}, err
+	}
+	if f, err = f.withProto(s.Proto); err != nil {
 		return compiledStep{}, err
 	}
 	f.name = stepName(s.Name, f)
