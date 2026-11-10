@@ -60,4 +60,4 @@ resonate --version
 ```
 
 Reports `dev` for a local/`go install` build, or the release tag (e.g.
-`v1.0.0-beta.2`) for a downloaded binary.
+`v1.0.0-beta.3`) for a downloaded binary.
