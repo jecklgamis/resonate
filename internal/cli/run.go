@@ -21,7 +21,9 @@ func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run <scenario.yaml>",
 		Short: "Run a load test scenario from a config file",
-		Long:  "Run a load test scenario from a scenario config YAML file.",
+		Long: "Run a load test scenario from a scenario config YAML file.\n\n" +
+			"A file with a scenarios: section runs several workloads at the same time, each with its own\n" +
+			"load profile; see https://jecklgamis.github.io/resonate/#/multiple-scenarios",
 
 		Example: `  # Full schema: run 'resonate schema'. More examples: docs/scenarios.md.
   protocol: http

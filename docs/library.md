@@ -409,6 +409,9 @@ checks the assertions), with the offending call named, rather than showing up as
 - `Message`/`Wait`/`Binary` outside a WebSocket scenario, `Call`-level setters before any `Call`, a second
   `Message` on one gRPC call (use `Messages`), `Extract`/`ExpectBody` on a WS message without `Wait`;
 - a step-scoped `Assertion` naming a step that doesn't exist, or on a protocol with no steps;
+- for a `Suite`: no scenarios, a missing, duplicate or nil scenario, a negative start delay, an invalid
+  `Scenario` (the error names it), an assertion naming a scenario or step that doesn't exist, an `Abort`
+  assertion with no `Scenario`, and a `Defaults` function that starts a request or returns nil;
 - an `Abort` assertion on `requests`/`success`, or with a negative `AbortAfter`;
 - everything the generators themselves validate: an unparseable URL, `HTTP3` with a non-`https` URL, `H2C`
   with TLS options, a streaming-only field on a unary gRPC call, a missing proto/CA/cert file. For gRPC with no

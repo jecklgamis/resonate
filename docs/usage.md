@@ -10,6 +10,7 @@
 | State across requests | None | `flow` supports response chaining (`{{.Vars.*}}`) and per-VU `identities` |
 | Setup steps | Not available | `http.setup` — runs once per VU before its first iteration |
 | Ramping load | Flat only (`--rate`/`--workers`/`--max-workers`) | Flat or `load.stages` (ramp profiles) |
+| Several workloads at once | One | `scenarios:` — each with its own load profile ([Multiple Scenarios](multiple-scenarios.md)) |
 | Assertions / CI gating | `--assert` (5 operators) | `assertions:` (7 condition kinds) |
 | Data-driven requests | Templating functions only | `http.feeder`/`ws.feeder` — one CSV/JSON row, inline row, or Kafka message, per iteration (`{{.Feeder.*}}`) |
 | mTLS / CA / HTTP/3 / h2c / keep-alive | Yes (`--cert`/`--key`/`--ca-cert`/`--http3`/`--h2c`/`--no-keepalive`) | Yes, as `http.*` fields (`http3` also under `sse`) |
@@ -91,7 +92,8 @@ See [`examples/http-basic.yaml`](https://github.com/jecklgamis/resonate/blob/mai
 `ws` ([WebSocket](scenarios.md#websocket)), `sse`
 ([Server-Sent Events guide](sse.md)) or `grpc` (the
 [gRPC guide](grpc.md)). The `load:` block and `assertions:` are the same for all
-four.
+four. To run several workloads at the same time, each with its own `load:`, put them under
+`scenarios:` instead; see [Multiple Scenarios](multiple-scenarios.md).
 
 ## Request Templating
 
@@ -210,9 +212,10 @@ richer condition set (`gt`/`lt`/`is`/`in`/`around`/`deviatesAround`), and
 [`examples/http-assertions.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-assertions.yaml)
 for a worked example.
 
-In a scenario file an assertion can also be scoped to one named step (`step:`) and can stop
-the run early when it fails (`abort: true`); see
-[Per-Step Results](scenarios.md#per-step-results) and
+In a scenario file an assertion can also be scoped to one named step (`step:`), to one scenario of
+a file with `scenarios:` (`scenario:`), and can stop the run early when it fails (`abort: true`); see
+[Per-Step Results](scenarios.md#per-step-results),
+[Multiple Scenarios](multiple-scenarios.md#assertions) and
 [Stopping a run early](scenarios.md#stopping-a-run-early). To gate on a regression against an
 earlier run instead of fixed thresholds, use [`resonate compare`](reports.md#comparing-runs).
 
@@ -244,6 +247,11 @@ Both commands fail fast, before any request is sent, on:
 - `http.targets`/`http.flow` set together, or neither set.
 - No stop condition (`duration`/`requests`/`iterations`/`stages`) on a
   scenario file.
+- For a file with `scenarios:`: an unknown key anywhere in it (these files are parsed strictly),
+  a top-level `load:`, a duplicate scenario name, an invalid scenario (reported with its name), an
+  assertion naming a scenario or step that doesn't exist, or an `abort` assertion with no
+  `scenario:`. A scenario file that fails to parse or merge exits with code 2; the rest with 1. See
+  [Multiple Scenarios](multiple-scenarios.md).
 - An `expect_status`/`--expect-status` code outside 100-599, a blank
   `expect_headers`/`--expect-header` name, or an `expect_body`/
   `--expect-body` rule with an unrecognized prefix.

@@ -19,6 +19,7 @@ for the repo's top-level overview, see its
 | --- | --- |
 | Two entry points | `resonate hit <url>` — flag-driven, single-URL, quick runs; `resonate run <scenario.yaml>` — reusable, multi-target/multi-step/WebSocket/SSE/gRPC |
 | Execution models | Closed model (fixed concurrency) and open model (constant-arrival-rate, auto-scaling concurrency to sustain a target rate) — flat or ramped via staged schedules |
+| Multiple scenarios | Several workloads in one file, running at the same time, each with its own load profile and an optional start delay (`scenarios:`), with one combined report and per-scenario assertions. See [Multiple Scenarios](multiple-scenarios.md) |
 | Multi-step flows | Response chaining (`{{.Vars.*}}`), per-virtual-user identities, think-time/control flow (`pause`, `repeat`, `during`, `if`) |
 | Request templating | `{{ }}` expressions for unique IDs, random payloads, fresh auth headers |
 | Data feeders | CSV/JSON feeders (with a streaming mode for files too large to fit in memory), inline rows (an array feeder), or a Kafka topic, for driving requests from real data. See the [Feeders guide](feeders.md) |

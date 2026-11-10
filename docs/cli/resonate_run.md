@@ -6,6 +6,9 @@ Run a load test scenario from a config file
 
 Run a load test scenario from a scenario config YAML file.
 
+A file with a scenarios: section runs several workloads at the same time, each with its own
+load profile; see https://jecklgamis.github.io/resonate/#/multiple-scenarios
+
 ```
 resonate run <scenario.yaml> [flags]
 ```
