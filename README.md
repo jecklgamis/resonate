@@ -37,8 +37,50 @@ Or download a prebuilt binary from the
 
 ## Quick start
 
+POST a random JSON payload on every request (`{{uuid}}`, `{{randChoice ...}}` and
+`{{randInt ...}}` are re-rendered per request), and fail the run with a non-zero exit code
+if p95 latency or the success rate misses its threshold:
+
 ```sh
-resonate hit http://localhost:8080/health --rate 50 --duration 30s --workers 20
+resonate hit http://localhost:8080/users \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"id": "{{uuid}}", "name": "{{randChoice "alice" "bob" "carol"}}", "age": {{randInt 18 65}}}' \
+  --rate 50 --duration 30s --workers 20 --timeout 5s \
+  --assert 'latency_p95<=500ms' \
+  --assert 'success_rate>=0.95'
+```
+
+For a reusable, checked-in test, describe the same run in a scenario file and use
+`resonate run`:
+
+```sh
+cat > scenario.yaml << 'EOF'
+protocol: http
+
+load:
+  duration: 30s
+  rate: 50
+  workers: 20
+
+http:
+  timeout: 5s
+  targets:
+    - method: POST
+      url: http://localhost:8080/users
+      headers:
+        Content-Type: application/json
+      body: '{"id": "{{uuid}}", "name": "{{randChoice "alice" "bob" "carol"}}", "age": {{randInt 18 65}}}'
+
+assertions:
+  - metric: latency_p95
+    max: 500ms
+
+  - metric: success_rate
+    min: "0.95"
+EOF
+
+resonate run scenario.yaml
 ```
 
 Every run writes a stdout summary plus `report.html`/`report.json`/
@@ -50,18 +92,52 @@ scenarios in YAML, see [docs/usage.md](docs/usage.md) and
 
 ## Go library
 
-```go
-import "github.com/jecklgamis/resonate"
+The same run as the quick start's `resonate hit` command and scenario file, written with
+the Go DSL: it POSTs the same random JSON payload and applies the same two assertions.
+Save it as `main.go` in a new directory:
 
-summary, err := resonate.NewScenario().
-	Get("http://localhost:8080/health").
-	Rate(50).Workers(20).Duration(30 * time.Second).
-	Run(ctx)
-if err != nil {
-	log.Fatal(err)
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"time"
+
+	"github.com/jecklgamis/resonate"
+)
+
+func main() {
+	p95, minSuccess := 0.5, 0.95 // latency_p95 is in seconds; success_rate is a 0-1 ratio
+
+	summary, err := resonate.NewScenario().
+		Post("http://localhost:8080/users").
+		JSONBody(`{"id": "{{uuid}}", "name": "{{randChoice "alice" "bob" "carol"}}", "age": {{randInt 18 65}}}`).
+		Timeout(5*time.Second).
+		Rate(50).Workers(20).Duration(30*time.Second).
+		Assert(
+			resonate.Assertion{Metric: "latency_p95", Max: &p95},
+			resonate.Assertion{Metric: "success_rate", Min: &minSuccess},
+		).
+		Run(context.Background())
+	summary.Print(os.Stdout) // the report is valid even when an assertion fails
+	if err != nil {
+		log.Fatal(err)
+	}
 }
-summary.Print(os.Stdout)
 ```
+
+Then run it:
+
+```sh
+go mod init loadtest   # once, in the new directory
+go mod tidy            # fetches github.com/jecklgamis/resonate
+go run .
+```
+
+A failed assertion makes `Run` return an error (after the report is printed), which
+`log.Fatal` turns into a non-zero exit, like `resonate run`.
 
 `go get github.com/jecklgamis/resonate` — see
 [docs/library.md](docs/library.md) for the full `Scenario` DSL and
