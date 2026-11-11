@@ -143,6 +143,23 @@ A failed assertion makes `Run` return an error (after the report is printed), wh
 [docs/library.md](docs/library.md) for the full `Scenario` DSL and
 struct-literal API.
 
+## Examples in the wild
+
+These sample apps each ship a `perf-tests/` scenario, a `run-perf-tests.sh`
+script and a GitHub Actions workflow that load tests the app with resonate:
+
+| Stack | Repos |
+|---|---|
+| Spring Boot | [Java](https://github.com/jecklgamis/spring-boot-java-example), [Kotlin](https://github.com/jecklgamis/spring-boot-kotlin-example), [Scala](https://github.com/jecklgamis/spring-boot-scala-example), [WebFlux](https://github.com/jecklgamis/spring-boot-webflux-example) |
+| Dropwizard | [Java](https://github.com/jecklgamis/dropwizard-java-example), [Kotlin](https://github.com/jecklgamis/dropwizard-kotlin-example), [Scala](https://github.com/jecklgamis/dropwizard-scala-example) |
+| Armeria | [armeria-rest-example](https://github.com/jecklgamis/armeria-rest-example) |
+| Go | [go-webapp-example](https://github.com/jecklgamis/go-webapp-example) |
+| Python | [Flask](https://github.com/jecklgamis/flask-app-example), [FastAPI](https://github.com/jecklgamis/fastapi-app-example) |
+| Node.js | [expressjs-app-example](https://github.com/jecklgamis/expressjs-app-example) |
+| .NET | [dotnet-webapi-example](https://github.com/jecklgamis/dotnet-webapi-example) |
+| gRPC | [Go](https://github.com/jecklgamis/go-grpc-example), [Java](https://github.com/jecklgamis/grpc-java-example) |
+| Mock server | [wiremock-server](https://github.com/jecklgamis/wiremock-server) |
+
 ## More
 
 - [docs/architecture.md](docs/architecture.md) — codebase map for anyone
