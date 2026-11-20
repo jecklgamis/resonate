@@ -224,7 +224,9 @@ A call fails, and the report's Errors table separates the causes with stable mes
 | `mcp: tool error: <text>` | the tool ran and returned `isError: true` |
 | `check failed: result "<rule>": got "x", want "y"` | an `expect_result` rule did not hold |
 | `mcp: stream ended without a response to request N` | an event stream closed without answering |
-| `mcp: unexpected content-type "<type>"` | the reply was neither JSON nor an event stream |
+| `mcp: unexpected content-type "<type>"` | the reply was neither JSON (`application/json`, `application/json-rpc`, any `+json`) nor an event stream |
+| `mcp: response exceeds max_response_body` | the reply was larger than `max_response_body` (or the 16 MiB default cap) |
+| `mcp: connection refused` / `mcp: connection reset by the server` / `mcp: connection closed by the server` | the transport failed; the request URL is deliberately left out so a token in its query string never reaches the report |
 
 Server-supplied text in these messages is truncated, so the table stays small.
 
@@ -280,7 +282,7 @@ See [Execution Models](execution-models.md) for the load models themselves.
 exchange, including reading an event-stream reply), `insecure`, `ca_file`,
 `cert_file`/`key_file` (mTLS), `h2c`, `http3` (the URL must be `https://`) and
 `max_response_body` (bytes read per reply; with none set a 16 MiB safety cap applies, and a
-reply over the cap fails to parse rather than exhausting memory). The HTTP client is shared
+reply over the cap fails with `mcp: response exceeds max_response_body` rather than exhausting memory). The HTTP client is shared
 by every virtual user, so connection pooling is Go's, as for HTTP.
 
 For example, a server behind a private CA that wants a client certificate:
