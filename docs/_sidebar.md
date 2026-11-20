@@ -7,6 +7,7 @@
   - [Kafka Feeder](kafka-feeder.md)
 - [gRPC](grpc.md)
 - [Server-Sent Events](sse.md)
+- [MCP](mcp.md)
 - [HTTP/3](http3.md)
 - [Execution Models](execution-models.md)
 - [Reports](reports.md)

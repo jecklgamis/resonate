@@ -1,6 +1,6 @@
 # resonate
 
-A load generator for HTTP (including HTTP/3), WebSocket, Server-Sent Events and gRPC: `resonate hit <url>` for a
+A load generator for HTTP (including HTTP/3), WebSocket, Server-Sent Events, gRPC and MCP: `resonate hit <url>` for a
 quick, flag-driven one-off run against a single URL, and
 `resonate run <scenario.yaml>` for reusable, multi-target/multi-step
 scenarios.
@@ -28,6 +28,7 @@ for the repo's top-level overview, see its
 | WebSocket support | Connect, send/receive a message sequence, chain extracted values the same way HTTP flows do |
 | Server-Sent Events | Open a stream per iteration, read N events and/or for a duration; reports time-to-headers and per-event gaps (`protocol: sse`). See the [SSE guide](sse.md) |
 | gRPC support | Unary and server-/client-/bidirectional-streaming calls, with the schema from server reflection, `.proto` files or a descriptor set; JSON messages with templating, metadata, response chaining, status-code and body checks (`protocol: grpc`). See the [gRPC guide](grpc.md) |
+| MCP support | One session per virtual user against an MCP server over streamable HTTP (`protocol: mcp`): tool calls, lists and any JSON-RPC method, exact-result checks, session setup reported as its own steps. See the [MCP guide](mcp.md) |
 | Assertions / CI gating | Non-zero exit on a failed threshold — `resonate hit --assert 'metric<op>threshold'` or a scenario file's `assertions:` (richer condition set: `gt`/`lt`/`is`/`in`/`around`/`deviatesAround`) |
 | Compression | Responses are decoded — gzip by default, and gzip/deflate/brotli/zstd (including stacked) when you set your own `Accept-Encoding` — and `compress:` compresses request bodies, so checks and byte counts see the real payload — see [Compression](scenarios.md#compression) |
 | Protobuf over HTTP | A `proto:` block on a target or flow step sends the templated JSON body as binary protobuf (and can decode the reply for checks), from `.proto` files or a descriptor set — see [Protobuf over HTTP](scenarios.md#protobuf-over-http) |
@@ -63,7 +64,7 @@ its time, request counts, rate and mean latency), a latency distribution
 histogram, and the latency percentiles (p50, p75, p90, p95, p99).
 
 See [Usage](usage.md) for the full quickstart (including a scenario file
-for multi-target/multi-step/WebSocket/SSE/gRPC runs), and [Reports](reports.md) for
+for multi-target/multi-step/WebSocket/SSE/gRPC/MCP runs), and [Reports](reports.md) for
 what each of the four report formats contains.
 
 ## Where to go next
@@ -83,6 +84,8 @@ what each of the four report formats contains.
 - **[Server-Sent Events](sse.md)** — the full guide: streams, ending them,
   what gets reported, load profiles, troubleshooting, and a runnable example
   server.
+- **[MCP](mcp.md)** — the full guide: sessions, tool calls and checks, what gets
+  reported, load profiles, troubleshooting, and a runnable example server.
 - **[HTTP/3](http3.md)** — the full guide: using `--http3`, `http3: true` and the Go
   options, what it does and doesn't do, troubleshooting, and a runnable example
   server.

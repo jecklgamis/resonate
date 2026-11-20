@@ -17,8 +17,8 @@ going through flag parsing or YAML.
 `resonate.NewScenario()` offers a fluent builder as an alternative to
 the struct-literal API — chained calls cover request building, response
 checks, single or multiple targets, multi-step flows, WebSocket, Server-Sent Events,
-gRPC, and every execution model described in [Execution Models](execution-models.md).
-A `Scenario` is exactly one protocol: HTTP (`Get`/`Target`/`Step`/...), `WS`, `SSE` or `GRPC`;
+gRPC, MCP, and every execution model described in [Execution Models](execution-models.md).
+A `Scenario` is exactly one protocol: HTTP (`Get`/`Target`/`Step`/...), `WS`, `SSE`, `GRPC` or `MCP`;
 mixing them is a `Build()`/`Run()` error.
 
 The default, single-target case needs no extra setup — `Method`/`Get`/
@@ -102,7 +102,7 @@ Method groups on `Scenario`:
 - **HTTP transport** — `FollowRedirects(bool)`, `MaxIdleConns(n)`, `MaxResponseBody(bytes)`,
   `H2C()`, `DisableKeepAlive()`, `HTTP3()`, `CAFile(path)` and `ClientCert(cert, key)` (mTLS), next
   to `Timeout`/`Insecure`/`BaseURL`. They configure the one shared client, so they apply to HTTP,
-  flow and SSE scenarios; on a WebSocket or gRPC scenario the HTTP-only ones (everything but
+  flow, SSE and MCP scenarios; on a WebSocket or gRPC scenario the HTTP-only ones (everything but
   `CAFile`/`ClientCert`, which gRPC honours) are a `Build()` error, whichever order you called them
   in. Conflicting combinations (`H2C` with `Insecure`, `DisableKeepAlive` or `HTTP3`) are rejected
   at construction.
@@ -197,6 +197,25 @@ Method groups on `Scenario`:
   or server reflection by default (which means `Build()` can fail if the server is unreachable).
   The call's kind is read from the schema, so a field that doesn't suit it (`Receive` on a unary
   call) is a `Build()` error. See [gRPC](grpc.md).
+- **MCP** — `MCP(url)` switches to building an `MCPGenerator`: every virtual user opens one session
+  against the server (reported as the steps `initialize` and `initialized`) and each iteration makes the
+  calls in order. `Tool(name, arguments)`, `MCPList(kind)` and `MCPMethod(method, params)` append a call;
+  `Name`, `Extract`, `ExpectResult(rule, value)` and `ExpectToolError()` then apply to the most recent one.
+  `arguments`/`params` are a map (string values are templated and stay strings), a string holding a raw JSON
+  template (for a templated number or boolean), or `nil`. `Header` applies to every request;
+  `ProtocolVersion` and `ClientInfo` set what `initialize` announces. `ExpectBody` is rejected: use
+  `ExpectResult`. See [MCP](mcp.md).
+
+  ```go
+  summary, err := resonate.NewScenario().
+  	MCP("http://localhost:8766/mcp").
+  	Header("Authorization", "Bearer {{.Identity.token}}").
+  	Identity(map[string]string{"token": "alice"}).
+  	Tool("add", map[string]any{"a": 2, "b": 3}).ExpectResult("json:structuredContent.result", "5").
+  	Tool("fail", nil).ExpectToolError().
+  	Rate(50).Workers(10).Duration(30 * time.Second).
+  	Run(ctx)
+  ```
 
   ```go
   summary, err := resonate.NewScenario().
@@ -240,38 +259,42 @@ kept for compatibility; everything else that can't apply is rejected. (`Suite`, 
 `Scenario`s together, has its own methods and is described under
 [Running several scenarios](#running-several-scenarios).)
 
-| Method | HTTP / flow | WebSocket | SSE | gRPC |
-| --- | :---: | :---: | :---: | :---: |
-| **Start the scenario** | `Get`/`Post`/`Put`/`Patch`/`Delete`/`Method`, `Target`, `Step`, `Setup` | `WS(url)` | `SSE(method, url)` | `GRPC(address)`, then `Call(method)` |
-| `Header` | ✓ | ✓ (connection header, before any `Message`) | ✓ | — use `Metadata` |
-| `Query`, `Body`, `JSONBody`, `FileBody`, `RawBody`, `RawFileBody` | ✓ | — use `Message` | ✓ | — use `Message` |
-| `Name` | ✓ | — | — | — |
-| `ExpectStatus`, `ExpectHeader` | ✓ | — | — | — |
-| `ExpectBody` | ✓ | ✓ (per message, needs `Wait`) | — | ✓ (per call) |
-| `Extract` | ✓ in a flow; no-op on a plain `Target` | ✓ (per message, needs `Wait`) | no-op | ✓ (per call) |
-| `Pause`, `PauseRange` | ✓ in a flow; no-op on a plain `Target` | — | no-op | — |
-| `Repeat`, `During`, `If`, `End` | ✓ (flow only) | — | — | — |
-| `Identity` | ✓ in a flow; no-op on a plain `Target` | ✓ | ✓ | ✓ |
-| `Feeder`, `FeederRows` | ✓ | ✓ | ✓ | ✓ |
-| `Timeout`, `Insecure` | ✓ | ✓ | ✓ | ✓ |
-| `BaseURL` | ✓ | no-op | ✓ | no-op |
-| `HTTP3`, `H2C`, `DisableKeepAlive`, `FollowRedirects`, `MaxIdleConns`, `MaxResponseBody` | ✓ | — | ✓ | — |
-| `CAFile`, `ClientCert` | ✓ | — | ✓ | ✓ |
-| `Message` | — | ✓ appends a frame | — | ✓ sets the call's one request |
-| `Wait`, `Binary` | — | ✓ | — | — |
-| `Messages`, `SendInterval`, `SendRepeat`, `Receive`, `ExpectCode` | — | — | — | ✓ |
-| `Metadata` | — | — | — | ✓ |
-| `Plaintext`, `Connections`, `ProtoFiles`, `ImportPaths`, `DescriptorSet` | — | — | — | ✓ |
-| `Events` | — | — | ✓ | — use `Receive` |
-| `StreamDuration` | — | — | ✓ | ✓ (per call) |
-| `Rate`, `Workers`, `MaxWorkers`, `Duration`, `Requests`, `Stages`, `Iterations` | ✓ | ✓ | ✓ | ✓ |
-| `Assert` | ✓ (`Step` too) | ✓ (`Step` is rejected by `Run`) | ✓ (same) | ✓ (same) |
-| `Build`, `Run` | ✓ | ✓ | ✓ | ✓ |
+| Method | HTTP / flow | WebSocket | SSE | gRPC | MCP |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| **Start the scenario** | `Get`/`Post`/`Put`/`Patch`/`Delete`/`Method`, `Target`, `Step`, `Setup` | `WS(url)` | `SSE(method, url)` | `GRPC(address)`, then `Call(method)` | `MCP(url)`, then `Tool`, `MCPList` or `MCPMethod` |
+| `Header` | ✓ | ✓ (connection header, before any `Message`) | ✓ | — use `Metadata` | ✓ (every request) |
+| `Query`, `Body`, `JSONBody`, `FileBody`, `RawBody`, `RawFileBody` | ✓ | — use `Message` | ✓ | — use `Message` | — |
+| `Name` | ✓ | — | — | — | ✓ (per call) |
+| `ExpectStatus`, `ExpectHeader` | ✓ | — | — | — | — |
+| `ExpectBody` | ✓ | ✓ (per message, needs `Wait`) | — | ✓ (per call) | — use `ExpectResult` |
+| `Extract` | ✓ in a flow; no-op on a plain `Target` | ✓ (per message, needs `Wait`) | no-op | ✓ (per call) | ✓ (per call) |
+| `Pause`, `PauseRange` | ✓ in a flow; no-op on a plain `Target` | — | no-op | — | — |
+| `Repeat`, `During`, `If`, `End` | ✓ (flow only) | — | — | — | — |
+| `Identity` | ✓ in a flow; no-op on a plain `Target` | ✓ | ✓ | ✓ | ✓ |
+| `Feeder`, `FeederRows` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `Timeout`, `Insecure` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `BaseURL` | ✓ | no-op | ✓ | no-op | ✓ |
+| `HTTP3`, `H2C`, `DisableKeepAlive`, `FollowRedirects`, `MaxIdleConns`, `MaxResponseBody` | ✓ | — | ✓ | — | ✓ |
+| `CAFile`, `ClientCert` | ✓ | — | ✓ | ✓ | ✓ |
+| `Message` | — | ✓ appends a frame | — | ✓ sets the call's one request | — |
+| `Wait`, `Binary` | — | ✓ | — | — | — |
+| `Messages`, `SendInterval`, `SendRepeat`, `Receive`, `ExpectCode` | — | — | — | ✓ | — |
+| `Metadata` | — | — | — | ✓ | — |
+| `Plaintext`, `Connections`, `ProtoFiles`, `ImportPaths`, `DescriptorSet` | — | — | — | ✓ | — |
+| `Events` | — | — | ✓ | — use `Receive` | — |
+| `StreamDuration` | — | — | ✓ | ✓ (per call) | — |
+| `Tool`, `MCPList`, `MCPMethod` | — | — | — | — | ✓ appends a call |
+| `ExpectResult`, `ExpectToolError` | — | — | — | — | ✓ (per call) |
+| `ProtocolVersion`, `ClientInfo` | — | — | — | — | ✓ |
+| `Rate`, `Workers`, `MaxWorkers`, `Duration`, `Requests`, `Stages`, `Iterations` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `Assert` | ✓ (`Step` too) | ✓ (`Step` is rejected by `Run`) | ✓ (same) | ✓ (same) | ✓ (`Step` too) |
+| `Build`, `Run` | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 Three names are spelled differently from their YAML or struct-field names because the obvious one was
 taken: `SendRepeat` (the gRPC call's `repeat`; `Repeat` opens a flow block), `StreamDuration` (an SSE
 stream's or gRPC call's `duration`; `Duration` is the length of the load test) and `Events` (SSE) versus
-`Receive` (gRPC) for "stop after n messages".
+`Receive` (gRPC) for "stop after n messages". Two more are specific to MCP: `MCPList` and `MCPMethod`
+(rather than `List` and `Method`, which would clash with `Method(method, url)` on an HTTP target).
 
 ### Worked examples
 
@@ -356,7 +379,7 @@ resonate.NewScenario().Get("http://localhost:8080/").Workers(10).Iterations(5).R
 ```
 
 **Transport options.** These configure the one HTTP client every worker shares, so they apply to HTTP,
-flow and SSE scenarios (and `CAFile`/`ClientCert` to gRPC).
+flow, SSE and MCP scenarios (and `CAFile`/`ClientCert` to gRPC).
 
 ```go
 resonate.NewScenario().
@@ -403,10 +426,10 @@ resonate.NewScenario().
 Everything below is reported by `Build()` or `Run()` before any request is sent (`Run` builds first, and also
 checks the assertions), with the offending call named, rather than showing up as a quietly wrong run:
 
-- mixing protocols (`WS` with `Target`, `SSE` with `GRPC`, ...), or a stray `Get`/`Header` on a WS or gRPC
+- mixing protocols (`WS` with `Target`, `SSE` with `GRPC`, `MCP` with `Get`, ...), or a stray `Get`/`Header` on a WS or gRPC
   scenario;
 - a setter that doesn't apply to the protocol (the **—** cells above), whichever order the calls were made in;
-- `Message`/`Wait`/`Binary` outside a WebSocket scenario, `Call`-level setters before any `Call`, a second
+- `Message`/`Wait`/`Binary` outside a WebSocket scenario, `Call`-level setters before any `Call`, `ExpectResult`/`Extract`/`Name` on an MCP scenario before any `Tool`/`MCPList`/`MCPMethod`, a second
   `Message` on one gRPC call (use `Messages`), `Extract`/`ExpectBody` on a WS message without `Wait`;
 - a step-scoped `Assertion` naming a step that doesn't exist, or on a protocol with no steps;
 - for a `Suite`: no scenarios, a missing, duplicate or nil scenario, a negative start delay, an invalid

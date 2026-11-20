@@ -37,6 +37,7 @@ thing that differs between protocols (see below). The engine never needs to know
 | WebSocket | `WSGenerator` | `ws` | no | struct API and `Scenario` builder | [Scenarios](scenarios.md#websocket) |
 | Server-Sent Events | `SSEGenerator` | `sse` | no | struct API | [SSE](sse.md) |
 | gRPC (unary and streaming) | `GRPCGenerator` | `grpc` | no | struct API | [gRPC](grpc.md) |
+| MCP (streamable HTTP) | `MCPGenerator` | `mcp` | no | struct API and `Scenario` builder | [MCP](mcp.md) |
 
 What an iteration produces:
 
@@ -46,6 +47,7 @@ What an iteration produces:
 | WebSocket | one connection's message sequence | the connect, then one per message |
 | SSE | one stream | the connect, then one per event |
 | gRPC | one `calls` sequence | one per unary call; one per *received* message of a streaming call |
+| MCP | one `calls` sequence over the virtual user's session | one per JSON-RPC request; the session's `initialize` and `initialized` the first time a user runs |
 
 ## Packages
 
@@ -161,10 +163,11 @@ prints a periodic summary instead, for load tests.
 | --- | --- | --- | --- | --- |
 | `examples/testgrpcserver` | `make example-grpc-server` | `:50051` | `acme.user.v1.UserService` (unary) and `acme.feed.v1.Feed` (all streaming kinds), from `examples/proto` | [gRPC](grpc.md#the-example-server) |
 | `examples/testsseserver` | `make example-sse-server` | `:8765` | finite, endless, POST-streaming, wrong-content-type and error endpoints | [SSE](sse.md#the-example-server) |
+| `examples/testmcpserver` | `make example-mcp-server` | `:8766` | a stateful streamable-HTTP MCP server: sessions, six tools (one that always fails), resources and prompts, JSON or event-stream replies (`-sse`), session expiry (`-session-ttl`) | [MCP](mcp.md#the-example-server) |
 | `examples/testhttp3server` | `make example-http3-server` | `:8443` (UDP and TCP) | `/proto` reports the protocol version, plus echo and SSE, over HTTP/3 *and* TCP | [HTTP/3](http3.md#the-example-server) |
 
 Pass flags with `ARGS`, e.g. `make example-sse-server ARGS=-log-requests=false`. 50051
-and 8443 are the conventional gRPC and alternate-HTTPS ports; the SSE server avoids
+and 8443 are the conventional gRPC and alternate-HTTPS ports; the SSE and MCP servers avoid
 8080, which is commonly already taken on a development machine, and each takes `-addr`
 if a port is busy. `examples/dsl-examples` is a separate Go module showing the fluent
 builder.

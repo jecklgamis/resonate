@@ -14,6 +14,7 @@ go test ./internal/engine/... -run TestScheduleAtRampsLinearly -v   # single tes
 go run ./cmd/resonate hit http://localhost:8080/health --duration 5s
 make example-grpc-server   # :50051 (ARGS=-reflection=false)
 make example-sse-server    # :8765
+make example-mcp-server    # :8766 (ARGS=-sse for event-stream replies, ARGS=-session-ttl=10s)
 make example-http3-server  # :8443 UDP+TCP (ARGS=-h3-only)
 ```
 
@@ -26,7 +27,7 @@ generator → facade alias in root `generator.go` → config struct + a link in 
 ## Docs and examples
 
 - `docs/` is the source of truth for user-facing behavior — keep it current and don't duplicate it. Root `README.md` stays a short overview that links into `docs/`; add detail to the relevant `docs/*.md`.
-- Each protocol with depth has **one** guide (`grpc.md`, `sse.md`, `http3.md`, `feeders.md`/`kafka-feeder.md`); `scenarios.md` just points to it.
+- Each protocol with depth has **one** guide (`grpc.md`, `sse.md`, `mcp.md`, `http3.md`, `feeders.md`/`kafka-feeder.md`); `scenarios.md` just points to it.
 - Every complete ```yaml scenario in a guide is tested: strict-decoded with `KnownFields(true)` (because `config.Load` silently ignores unknown keys) and run through the real `cli.NewRootCommand` against the example server with only the host rewritten. So full scenarios must target the example server's real endpoints; a long-running illustration is exempted from *running* by an invisible `<!-- docs-test: parse-only -->` line above the fence.
-- Example servers: stdlib/dynamic-message only (no codegen), `call`/`done` access-style logging, `-log-requests=false` + periodic summary for load tests, never log credentials, default port avoids 8080 (SSE uses 8765).
+- Example servers: stdlib/dynamic-message only (no codegen), `call`/`done` access-style logging, `-log-requests=false` + periodic summary for load tests, never log credentials, default port avoids 8080 (SSE uses 8765, MCP 8766).
 - **Shipping a new example server** = `make example-<proto>-server` target + guide section + a test running the shipped examples and guide against it + a line in `docs/architecture.md`'s table.

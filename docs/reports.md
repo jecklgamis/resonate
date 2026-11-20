@@ -45,6 +45,9 @@ of iterations:
 - **WebSocket:** one result for the connect plus one per message.
 - **Server-Sent Events:** one result for the connect plus one per event received
   (see [Server-Sent Events](sse.md#what-gets-reported)).
+- **MCP:** one result per JSON-RPC request: `initialize` and `initialized` the first time
+  each virtual user runs, then one per call (see [MCP](mcp.md#what-gets-reported)). The
+  per-step table is where the numbers mean something.
 - **gRPC:** one result per unary call, and for a streaming call one result
   per *received* message (see [gRPC](grpc.md#what-a-stream-reports)), so a stream
   delivering 5 messages adds 5 requests. gRPC statuses show in the status

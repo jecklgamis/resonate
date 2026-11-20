@@ -26,6 +26,13 @@ example-grpc-server:
 example-sse-server:
 	go run ./examples/testsseserver $(ARGS)
 
+# The MCP example server (examples/testmcpserver), a target for trying
+# examples/mcp-*.yaml. Pass flags with ARGS, e.g. ARGS=-sse for event-stream
+# replies or ARGS=-log-requests=false.
+.PHONY: example-mcp-server
+example-mcp-server:
+	go run ./examples/testmcpserver $(ARGS)
+
 # The HTTP/3 example server (examples/testhttp3server), a target for trying
 # examples/http-http3.yaml and examples/sse-http3.yaml. Pass flags with ARGS,
 # e.g. ARGS=-h3-only.

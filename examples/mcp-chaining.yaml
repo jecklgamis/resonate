@@ -1,0 +1,35 @@
+# Chain calls with extract, send templated numbers, and give each virtual user
+# its own identity. `arguments:` is either a mapping (string values are
+# templated and stay JSON strings) or, as here, a string holding a raw JSON
+# document that is itself a template: the form to use when a templated value
+# must be a JSON number or boolean.
+#
+#   make example-mcp-server
+#   resonate run examples/mcp-chaining.yaml --dry-run
+protocol: mcp
+
+load:
+  duration: 10s
+  rate: 20
+  workers: 4
+
+mcp:
+  url: http://localhost:8766/mcp
+  headers:                          # sent on every request, templated like any field
+    Authorization: Bearer {{.Identity.token}}
+  identities:                       # one per virtual user, round-robin
+    - token: alice
+    - token: bob
+  calls:
+    - tool: add
+      arguments: '{"a": {{randInt 1 100}}, "b": {{randInt 1 100}}}'
+      extract:
+        sum: json:structuredContent.result
+
+    - tool: multiply
+      arguments: '{"a": {{.Vars.sum}}, "b": 2}'
+      expect_result:
+        json:structuredContent.result: ""     # the rule must evaluate; the value is random
+
+    - tool: echo
+      arguments: {message: "session {{.Vars.session_id}} serves {{.Identity.token}}"}

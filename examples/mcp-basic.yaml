@@ -1,0 +1,39 @@
+# MCP (Model Context Protocol): every virtual user opens one session
+# (initialize + notifications/initialized) and each iteration calls these tools
+# over it, checking the exact answers. Session setup is reported as its own
+# steps, "initialize" and "initialized".
+#
+# Try it without a server of your own, using the example MCP server:
+#   make example-mcp-server      # or: go run ./examples/testmcpserver   (listens on :8766)
+#   resonate run examples/mcp-basic.yaml --dry-run
+protocol: mcp
+
+load:
+  duration: 30s
+  rate: 100
+  workers: 20
+
+mcp:
+  url: http://localhost:8766/mcp
+  timeout: 5s
+  calls:
+    - tool: add
+      arguments: {a: 2, b: 3}
+      expect_result:
+        json:structuredContent.result: "5"
+
+    - tool: solve_quadratic
+      arguments: {a: 1, b: -3, c: 2}
+      expect_result:
+        json:structuredContent.real_roots: "2"
+
+    - tool: echo
+      arguments: {message: "hello from vu {{.VU}}"}
+
+# Each call is its own step in the report, so a limit can target one tool.
+assertions:
+  - metric: success_rate
+    min: "0.999"
+  - metric: latency_p95
+    step: solve_quadratic
+    max: 50ms
