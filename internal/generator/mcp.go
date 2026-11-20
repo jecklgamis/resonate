@@ -10,11 +10,13 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/jecklgamis/resonate/internal/tmpl"
@@ -39,6 +41,40 @@ const mcpMaxErrText = 120
 // MaxResponseBody is configured, so a misbehaving server cannot exhaust
 // resonate's memory.
 const mcpMaxMessage = 16 << 20
+
+// mcpRenderFailPause is how long a worker waits after a call whose templated
+// arguments could not be rendered, a failure that never reaches the network.
+const mcpRenderFailPause = 100 * time.Millisecond
+
+// errMCPBodyTooLarge reports a reply cut off by max_response_body.
+var errMCPBodyTooLarge = errors.New("mcp: response exceeds max_response_body")
+
+// capReader reads at most limit bytes and then fails with errMCPBodyTooLarge
+// if the reply has more, instead of silently truncating it (which would
+// surface as a misleading JSON parse error).
+type capReader struct {
+	r     io.Reader
+	limit int64
+	n     int64
+}
+
+func (c *capReader) Read(p []byte) (int, error) {
+	if c.n >= c.limit {
+		// At the limit: only a further byte proves the reply was cut short.
+		var one [1]byte
+		n, err := c.r.Read(one[:])
+		if n > 0 {
+			return 0, errMCPBodyTooLarge
+		}
+		return 0, err
+	}
+	if rem := c.limit - c.n; int64(len(p)) > rem {
+		p = p[:rem]
+	}
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
 
 // MCPCall is one JSON-RPC request a session makes each iteration. Exactly one
 // of Tool, Method or List is set.
@@ -553,6 +589,9 @@ func (a *MCPGenerator) Do(ctx context.Context, vuID int) []Result {
 		params, err := renderParams(call, data)
 		if err != nil {
 			results = append(results, Result{Timestamp: time.Now(), Error: err, Protocol: "mcp", Step: call.name})
+			// This failure does no network I/O, so without a pause a worker with
+			// no --rate would retry it millions of times a second.
+			sleepCtx(ctx, mcpRenderFailPause)
 			return results
 		}
 		res, out, dropped := a.exchange(ctx, vu, data, call.name, call.method, params, false)
@@ -701,7 +740,7 @@ func (a *MCPGenerator) exchange(ctx context.Context, vu *mcpVU, data tmpl.Data, 
 	if limit <= 0 {
 		limit = mcpMaxMessage
 	}
-	counter := &countingReader{r: io.LimitReader(reader, limit)}
+	counter := &countingReader{r: &capReader{r: reader, limit: limit}}
 
 	finish := func() {
 		res.Latency = time.Since(start)
@@ -738,6 +777,9 @@ func (a *MCPGenerator) exchange(ctx context.Context, vu *mcpVU, data tmpl.Data, 
 
 	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	var m *mcpMessage
+	if mediaType == "application/json-rpc" || mediaType == "application/jsonrequest" || strings.HasSuffix(mediaType, "+json") {
+		mediaType = "application/json" // JSON by another name
+	}
 	switch mediaType {
 	case "text/event-stream":
 		m, err = readMCPEventStream(counter, id)
@@ -779,13 +821,31 @@ func (a *MCPGenerator) exchange(ctx context.Context, vu *mcpVU, data tmpl.Data, 
 	return res, out, false
 }
 
-// transportErr turns a failed exchange into a stable error: a deadline we set
-// reads as a timeout rather than Go's address-bearing url.Error text.
+// transportErr turns a failed exchange into a stable error. A deadline we set
+// reads as a timeout. Go's url.Error would otherwise put the full request URL
+// in the message, query string included, and the report's Errors table (which
+// gets shared) must never carry a token that lives there, so the URL is dropped
+// and the common network failures get fixed, address-free texts.
 func (a *MCPGenerator) transportErr(callCtx context.Context, err error) error {
 	if errors.Is(callCtx.Err(), context.DeadlineExceeded) {
 		return fmt.Errorf("mcp: timed out after %s", a.timeout)
 	}
-	return err
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		err = ue.Err
+	}
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return errors.New("mcp: connection refused")
+	case errors.Is(err, syscall.ECONNRESET):
+		return errors.New("mcp: connection reset by the server")
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return errors.New("mcp: connection closed by the server")
+	}
+	if strings.HasPrefix(err.Error(), "mcp: ") {
+		return err // already a stable, address-free message
+	}
+	return fmt.Errorf("mcp: %w", err)
 }
 
 func httpStatusErr(status int, body []byte) error {

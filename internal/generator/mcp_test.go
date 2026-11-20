@@ -49,6 +49,9 @@ type fakeMCP struct {
 	// rpcError makes a method answer with a JSON-RPC error.
 	rpcError map[string]int
 
+	// ctype overrides the Content-Type of a plain JSON reply.
+	ctype string
+
 	// slow delays every tools/call by this long.
 	slow time.Duration
 
@@ -216,7 +219,11 @@ func (f *fakeMCP) reply(w http.ResponseWriter, id json.RawMessage, result any, r
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(append([]any{map[string]any{"jsonrpc": "2.0", "method": "notifications/progress"}}, resp))
 	default:
-		w.Header().Set("Content-Type", "application/json")
+		ct := "application/json"
+		if f.ctype != "" {
+			ct = f.ctype
+		}
+		w.Header().Set("Content-Type", ct)
 		_ = json.NewEncoder(w).Encode(resp)
 	}
 }
@@ -806,5 +813,127 @@ func TestMCPServerTextInErrorsIsBoundedAndValidUTF8(t *testing.T) {
 	}
 	if !strings.HasSuffix(msg, "...") {
 		t.Errorf("a truncated message should say so: %q", msg)
+	}
+}
+
+// The report's Errors table is shared, so a transport failure must never carry
+// the request URL, whose query string may hold a token.
+func TestMCPTransportErrorsDoNotLeakTheURL(t *testing.T) {
+	const secret = "SUPERSECRET123"
+	check := func(t *testing.T, name, url, want string) {
+		t.Helper()
+		g := mcpGen(t, url+"?token="+secret, []MCPCall{addCall})
+		rs := g.Do(context.Background(), 0)
+		msg := errText(rs[len(rs)-1])
+		if msg == "" {
+			t.Fatalf("%s: expected a failure", name)
+		}
+		if strings.Contains(msg, secret) || strings.Contains(msg, "token=") || strings.Contains(msg, "http://") {
+			t.Errorf("%s: the error leaks the request URL: %q", name, msg)
+		}
+		if msg != want {
+			t.Errorf("%s: error = %q, want %q", name, msg, want)
+		}
+	}
+
+	t.Run("connection refused", func(t *testing.T) {
+		dead := httptest.NewServer(http.NotFoundHandler())
+		url := dead.URL
+		dead.Close()
+		check(t, "refused", url, "mcp: connection refused")
+	})
+	t.Run("server hangs up", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			conn.Close() // no reply at all
+		}))
+		defer srv.Close()
+		check(t, "hang up", srv.URL, "mcp: connection closed by the server")
+	})
+	t.Run("an error with no fixed text still drops the URL", func(t *testing.T) {
+		// An untrusted certificate reaches the generic path, not one of the
+		// fixed messages above.
+		srv := httptest.NewTLSServer(http.NotFoundHandler())
+		defer srv.Close()
+		g := mcpGen(t, srv.URL+"?token="+secret, []MCPCall{addCall})
+		msg := errText(g.Do(context.Background(), 0)[0])
+		if !strings.HasPrefix(msg, "mcp: ") || !strings.Contains(msg, "certificate") {
+			t.Fatalf("expected a certificate error, got %q", msg)
+		}
+		if strings.Contains(msg, secret) || strings.Contains(msg, "https://") {
+			t.Errorf("the error leaks the request URL: %q", msg)
+		}
+	})
+	t.Run("the timeout text carries no URL either", func(t *testing.T) {
+		_, srv := newFakeMCP(t, func(f *fakeMCP) { f.slow = 2 * time.Second })
+		g := mcpGen(t, srv.URL+"?token="+secret, []MCPCall{addCall}, func(_ *MCPTarget, o *MCPOptions) { o.HTTP.Timeout = 100 * time.Millisecond })
+		rs := g.Do(context.Background(), 0)
+		if msg := errText(rs[len(rs)-1]); msg != "mcp: timed out after 100ms" {
+			t.Errorf("error = %q", msg)
+		}
+	})
+}
+
+func TestMCPOversizedReplyNamesTheCap(t *testing.T) {
+	_, srv := newFakeMCP(t)
+	echo := MCPCall{Tool: "echo", Arguments: map[string]any{"message": strings.Repeat("x", 4000)}}
+	g := mcpGen(t, srv.URL, []MCPCall{echo}, func(_ *MCPTarget, o *MCPOptions) { o.HTTP.MaxResponseBody = 1024 })
+	rs := g.Do(context.Background(), 0)
+	if msg := errText(rs[len(rs)-1]); msg != "mcp: response exceeds max_response_body" {
+		t.Errorf("error = %q, want the cap named", msg)
+	}
+	// A reply that fits exactly under a generous cap still works.
+	g2 := mcpGen(t, srv.URL, []MCPCall{echo}, func(_ *MCPTarget, o *MCPOptions) { o.HTTP.MaxResponseBody = 1 << 20 })
+	rs = g2.Do(context.Background(), 0)
+	if msg := errText(rs[len(rs)-1]); msg != "" {
+		t.Errorf("a reply under the cap failed: %q", msg)
+	}
+}
+
+func TestMCPAcceptsJSONMediaTypeVariants(t *testing.T) {
+	for _, ct := range []string{"application/json-rpc", "application/vnd.api+json", "application/json; charset=utf-8"} {
+		_, srv := newFakeMCP(t, func(f *fakeMCP) { f.ctype = ct })
+		g := mcpGen(t, srv.URL, []MCPCall{addCall})
+		rs := g.Do(context.Background(), 0)
+		if msg := errText(rs[len(rs)-1]); msg != "" {
+			t.Errorf("content-type %q: %s", ct, msg)
+		}
+	}
+}
+
+func TestMCPUnrenderableArgumentsDoNotFreeSpin(t *testing.T) {
+	_, srv := newFakeMCP(t)
+	bad := MCPCall{Tool: "add", Arguments: `{"a": {{.Vars.missing}}, "b": 1}`}
+	g := mcpGen(t, srv.URL, []MCPCall{bad})
+	start := time.Now()
+	rs := g.Do(context.Background(), 0)
+	if errText(rs[len(rs)-1]) == "" {
+		t.Fatal("expected the call to fail")
+	}
+	if time.Since(start) < mcpRenderFailPause {
+		t.Errorf("a failure with no network I/O returned in %s; workers would free-spin", time.Since(start))
+	}
+	// The pause must not outlive the run.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start = time.Now()
+	g.Do(ctx, 1)
+	if time.Since(start) > mcpRenderFailPause/2 {
+		t.Errorf("the pause ignored a cancelled context")
+	}
+}
+
+// Errors the generator words itself already start with "mcp: "; passing them
+// through the transport error path must not stack a second prefix.
+func TestMCPOwnErrorsAreNotPrefixedTwice(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "this is not json")
+	}))
+	defer srv.Close()
+	g := mcpGen(t, srv.URL, []MCPCall{addCall})
+	msg := errText(g.Do(context.Background(), 0)[0])
+	if !strings.HasPrefix(msg, "mcp: reply is not valid JSON-RPC") || strings.Contains(msg, "mcp: mcp:") {
+		t.Errorf("error = %q", msg)
 	}
 }
