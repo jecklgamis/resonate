@@ -191,8 +191,14 @@ mcp:
 ```
 
 With `expect_tool_error: true` the call passes when the tool reports an error and fails when
-it unexpectedly succeeds. It applies to `tool:` calls only. A JSON-RPC error, such as an
-unknown tool, is always a failure.
+it unexpectedly succeeds. It applies to `tool:` calls only. A JSON-RPC `error` is always a
+failure.
+
+Which of the two a server uses for a given mistake is the server's choice. For an unknown tool
+the example server answers with a JSON-RPC error (`-32602`), while the official Python SDK
+answers with a tool error (`isError: true`, so `expect_tool_error: true` matches it). Both
+report arguments of the wrong type as a tool error. Check what your server does with
+`--dry-run` before you assert on it.
 
 ## What gets reported
 
@@ -362,6 +368,26 @@ It logs like an access log: a `call` line as a request arrives and a `done` line
 finishes, with the JSON-RPC method. That is a lot of output under load, so for a
 performance run use `-log-requests=false`, which prints a one-line summary every
 `-stats-interval` instead. Credentials are never logged.
+
+### Checking against a server resonate did not write
+
+`examples/testmcpserver` is written alongside resonate's MCP support, so the two can share a
+wrong assumption and still pass each other's tests. `examples/pythonmcpserver` is the
+counterpart: a server built on the **official MCP Python SDK**, with the same tools, so the
+shipped `examples/mcp-*.yaml` scenarios run against it unchanged. The SDK decides for itself
+how replies are framed, whether a session exists and what a bad argument returns.
+
+```sh
+make example-python-mcp-server                          # :8767, event-stream replies, stateful
+make example-python-mcp-server ARGS=--json-response     # plain JSON replies
+make example-python-mcp-server ARGS=--stateless         # no sessions at all
+make example-python-mcp-server ARGS="--session-idle-timeout 5"   # the server forgets idle sessions
+```
+
+It needs [`uv`](https://docs.astral.sh/uv/), which installs the SDK into a throwaway environment.
+`make test-mcp-interop` runs resonate against all four combinations of reply format and
+statefulness, plus the SDK's error behaviour and an expired session. It is opt-in (it needs
+`uv` and, the first time, a network), so a plain `go test ./...` skips it.
 
 ## Example scenarios
 

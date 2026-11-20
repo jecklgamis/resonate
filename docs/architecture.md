@@ -164,6 +164,7 @@ prints a periodic summary instead, for load tests.
 | `examples/testgrpcserver` | `make example-grpc-server` | `:50051` | `acme.user.v1.UserService` (unary) and `acme.feed.v1.Feed` (all streaming kinds), from `examples/proto` | [gRPC](grpc.md#the-example-server) |
 | `examples/testsseserver` | `make example-sse-server` | `:8765` | finite, endless, POST-streaming, wrong-content-type and error endpoints | [SSE](sse.md#the-example-server) |
 | `examples/testmcpserver` | `make example-mcp-server` | `:8766` | a stateful streamable-HTTP MCP server: sessions, six tools (one that always fails), resources and prompts, JSON or event-stream replies (`-sse`), session expiry (`-session-ttl`) | [MCP](mcp.md#the-example-server) |
+| `examples/pythonmcpserver` | `make example-python-mcp-server` | `:8767` | the same tools as `testmcpserver`, built on the **official MCP Python SDK** (needs `uv`), in every combination of reply format (`--json-response`) and statefulness (`--stateless`); `make test-mcp-interop` runs resonate against all four | [MCP](mcp.md#checking-against-a-server-resonate-did-not-write) |
 | `examples/testhttp3server` | `make example-http3-server` | `:8443` (UDP and TCP) | `/proto` reports the protocol version, plus echo and SSE, over HTTP/3 *and* TCP | [HTTP/3](http3.md#the-example-server) |
 
 Pass flags with `ARGS`, e.g. `make example-sse-server ARGS=-log-requests=false`. 50051
