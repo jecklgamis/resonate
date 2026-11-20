@@ -1,6 +1,6 @@
 module dsl-examples
 
-go 1.27.4
+go 1.27.3
 
 require github.com/jecklgamis/resonate v0.0.0
 
