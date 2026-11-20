@@ -53,5 +53,5 @@ resonate hit <url> [flags]
 
 ### SEE ALSO
 
-* [resonate](resonate.md)	 - Load test HTTP, WebSocket, gRPC and SSE services
+* [resonate](resonate.md)	 - Load test HTTP, WebSocket, gRPC, SSE and MCP services
 

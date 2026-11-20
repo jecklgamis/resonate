@@ -239,6 +239,15 @@ func scenarioSettings(path string, s *config.Scenario) []report.Setting {
 		l.add("Transport", transportSummary(e.HTTP3, e.H2C, e.Insecure, e.CertFile, e.CAFile, false, false))
 		l.add("Timeout", e.Timeout)
 		l.add("Max response body", bytesSummary(e.MaxResponseBody))
+	case "mcp":
+		m := s.MCP
+		l.add("Target", safeURL(m.URL))
+		l.add("Shape", "one session per virtual user, "+plural(len(m.Calls), "call")+" per iteration")
+		l.add("Identities", identityCount(m.Identities))
+		l.add("Feeder", feederSummary(m.Feeder))
+		l.add("Transport", transportSummary(m.HTTP3, m.H2C, m.Insecure, m.CertFile, m.CAFile, false, false))
+		l.add("Timeout", m.Timeout)
+		l.add("Max response body", bytesSummary(m.MaxResponseBody))
 	case "grpc":
 		g := s.GRPC
 		l.add("Target", g.Address)

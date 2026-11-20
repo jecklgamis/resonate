@@ -656,3 +656,79 @@ sse:
 		t.Error("sse.http3 not parsed")
 	}
 }
+
+func TestLoadMCPScenario(t *testing.T) {
+	path := writeTempFile(t, "scenario.yaml", `
+protocol: mcp
+
+load:
+  duration: 10s
+  workers: 5
+
+mcp:
+  url: https://mcp.example.com/mcp
+  headers:
+    Authorization: Bearer {{.Identity.token}}
+  protocol_version: "2025-03-26"
+  client_info: {name: perf, version: "2"}
+  timeout: 5s
+  insecure: true
+  max_response_body: 1048576
+  identities:
+    - token: a
+  calls:
+    - tool: add
+      arguments: {a: 2, b: 3, label: "{{.VU}}", nested: {list: [1, "x"]}}
+      extract: {sum: "json:structuredContent.result"}
+      expect_result:
+        "json:structuredContent.result": "5"
+    - tool: echo
+      name: say
+      arguments: '{"message": {{.Seq}}}'
+    - tool: fail
+      expect_tool_error: true
+    - list: resources
+    - method: resources/read
+      params: {uri: "file:///x"}
+`)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	m := s.MCP
+	if s.Protocol != "mcp" || m.URL != "https://mcp.example.com/mcp" || m.ProtocolVersion != "2025-03-26" {
+		t.Errorf("unexpected mcp section: %+v", m)
+	}
+	if m.ClientInfo.Name != "perf" || m.ClientInfo.Version != "2" || m.Timeout != "5s" || !m.Insecure || m.MaxResponseBody != 1048576 || len(m.Identities) != 1 {
+		t.Errorf("unexpected mcp fields: %+v", m)
+	}
+	if len(m.Calls) != 5 {
+		t.Fatalf("calls = %d, want 5", len(m.Calls))
+	}
+	add := m.Calls[0]
+	args, ok := add.Arguments.(map[string]any)
+	if add.Tool != "add" || !ok || args["a"] != 2 || args["label"] != "{{.VU}}" {
+		t.Errorf("add call = %+v (arguments %T)", add, add.Arguments)
+	}
+	if add.Extract["sum"] != "json:structuredContent.result" || add.ExpectResult["json:structuredContent.result"] != "5" {
+		t.Errorf("add extract/expect = %+v / %+v", add.Extract, add.ExpectResult)
+	}
+	if raw, ok := m.Calls[1].Arguments.(string); !ok || raw != `{"message": {{.Seq}}}` || m.Calls[1].Name != "say" {
+		t.Errorf("a string arguments value must stay a string (raw JSON template): %+v", m.Calls[1])
+	}
+	if !m.Calls[2].ExpectToolError || m.Calls[3].List != "resources" || m.Calls[4].Method != "resources/read" {
+		t.Errorf("calls = %+v", m.Calls)
+	}
+}
+
+// A single-scenario file is lenient about unknown keys (long-standing), but the
+// MCP section must still load the keys it does know.
+func TestLoadMCPScenarioIgnoresNothingItKnows(t *testing.T) {
+	s, err := Load(writeTempFile(t, "s.yaml", "protocol: mcp\nload: {duration: 1s}\nmcp:\n  url: http://h/mcp\n  calls: [{list: tools}]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.MCP.URL != "http://h/mcp" || len(s.MCP.Calls) != 1 {
+		t.Errorf("mcp = %+v", s.MCP)
+	}
+}

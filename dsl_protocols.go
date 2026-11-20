@@ -10,7 +10,7 @@ import (
 // This file is the fluent builder's coverage of the non-HTTP protocols (SSE,
 // gRPC) and of the HTTP transport options the other protocols' YAML has but the
 // first version of the builder didn't. A Scenario is exactly one protocol —
-// HTTP (Target/Step/Setup/Get/...), WS, SSE or GRPC — and mixing them fails at
+// HTTP (Target/Step/Setup/Get/...), WS, SSE, GRPC or MCP — and mixing them fails at
 // Build, like mixing Target with Step always did.
 
 // --- Which protocol is this scenario? ---------------------------------------
@@ -24,6 +24,8 @@ func (s *Scenario) describeMode() string {
 		return "an SSE scenario"
 	case s.grpc != nil:
 		return "a gRPC scenario"
+	case s.mcp != nil:
+		return "an MCP scenario"
 	}
 	return "an HTTP scenario"
 }
@@ -63,6 +65,9 @@ func (s *Scenario) checkModes(isFlow bool) error {
 	}
 	if s.grpc != nil {
 		used = append(used, "GRPC")
+	}
+	if s.mcp != nil {
+		used = append(used, "MCP")
 	}
 	if len(used) > 1 {
 		return fmt.Errorf("resonate: scenario mixes %s — use one protocol per Scenario", strings.Join(used, " with "))

@@ -12,17 +12,18 @@ import (
 
 // Scenario is the top-level shape of a resonate config file.
 type Scenario struct {
-	Protocol   string            `yaml:"protocol"` // "http", "ws", "grpc" or "sse"
+	Protocol   string            `yaml:"protocol"` // "http", "ws", "grpc", "sse" or "mcp"
 	Load       LoadConfig        `yaml:"load"`
 	HTTP       HTTPConfig        `yaml:"http"`
 	WS         WSConfig          `yaml:"ws"`
 	GRPC       GRPCConfig        `yaml:"grpc"`
 	SSE        SSEConfig         `yaml:"sse"`
+	MCP        MCPConfig         `yaml:"mcp"`
 	Assertions []AssertionConfig `yaml:"assertions"`
 
 	// Scenarios, if non-empty, makes this a multi-scenario file: several
 	// named scenarios run concurrently, each with its own load profile. The
-	// top-level http/ws/grpc/sse sections then hold defaults every scenario
+	// top-level http/ws/grpc/sse/mcp sections then hold defaults every scenario
 	// of that protocol inherits, and the top-level load must be left unset.
 	// See ScenarioSet and Resolve.
 	Scenarios ScenarioSet `yaml:"scenarios,omitempty"`
@@ -530,6 +531,97 @@ func (c SSEConfig) ParsedDuration() (time.Duration, error) {
 		return 0, nil
 	}
 	return time.ParseDuration(c.Duration)
+}
+
+// MCPConfig describes an MCP (Model Context Protocol) server reached over the
+// streamable HTTP transport. Every virtual user opens one session
+// (initialize + notifications/initialized) and each iteration makes Calls in
+// order over it, stopping at the first failure. URL, Headers and every string
+// in a call's arguments/params may embed {{ }} template expressions. See
+// internal/generator.MCPTarget for the exact semantics.
+type MCPConfig struct {
+	URL string `yaml:"url"`
+
+	// Headers are sent on every request (for example Authorization).
+	Headers map[string]string `yaml:"headers"`
+
+	// ProtocolVersion is announced in initialize; default 2025-06-18.
+	ProtocolVersion string `yaml:"protocol_version"`
+
+	// ClientInfo names resonate in initialize's clientInfo.
+	ClientInfo MCPClientInfoConfig `yaml:"client_info"`
+
+	// Calls are the JSON-RPC requests made, in order, every iteration.
+	Calls []MCPCallConfig `yaml:"calls"`
+
+	// Identities: an optional pool of named values (e.g. tokens), one
+	// assigned per virtual user and exposed as {{.Identity.<key>}}.
+	Identities []map[string]string `yaml:"identities"`
+
+	// Feeder: an optional CSV/JSON data source, one row per iteration,
+	// exposed as {{.Feeder.<column>}}.
+	Feeder FeederConfig `yaml:"feeder"`
+
+	// Timeout bounds one whole JSON-RPC exchange, including reading an
+	// event-stream reply.
+	Timeout  string `yaml:"timeout"`
+	Insecure bool   `yaml:"insecure"`
+
+	// MaxResponseBody caps the bytes read per reply (0 = a 16 MiB safety cap).
+	MaxResponseBody int64 `yaml:"max_response_body"`
+
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+	CAFile   string `yaml:"ca_file"`
+
+	// H2C forces prior-knowledge HTTP/2 over plaintext, like http.h2c.
+	H2C bool `yaml:"h2c"`
+
+	// HTTP3 uses HTTP/3 (QUIC over UDP), like http.http3; the url must be
+	// https://. Mutually exclusive with H2C.
+	HTTP3 bool `yaml:"http3"`
+}
+
+// MCPClientInfoConfig is the clientInfo announced in initialize.
+type MCPClientInfoConfig struct {
+	Name    string `yaml:"name"`
+	Version string `yaml:"version"`
+}
+
+// MCPCallConfig is one entry in mcp.calls. Exactly one of Tool, List or
+// Method is set.
+type MCPCallConfig struct {
+	// Name labels the call in the report's per-step breakdown and in
+	// step-scoped assertions; default the tool name, the method, or
+	// "<kind>/list".
+	Name string `yaml:"name"`
+
+	// Tool calls a tool (tools/call) with Arguments: a mapping (string
+	// values are templated and render as JSON strings) or a string holding a
+	// raw JSON document, itself a template — use that form for a templated
+	// number or boolean.
+	Tool      string `yaml:"tool"`
+	Arguments any    `yaml:"arguments"`
+
+	// List is "tools", "resources" or "prompts" (tools/list, ...).
+	List string `yaml:"list"`
+
+	// Method sends any other JSON-RPC method with Params (same forms as
+	// Arguments).
+	Method string `yaml:"method"`
+	Params any    `yaml:"params"`
+
+	// Extract pulls values from the JSON-RPC result into {{.Vars.<name>}} for
+	// later calls. Rules: json:, yaml:, xml:, regex:.
+	Extract map[string]string `yaml:"extract"`
+
+	// ExpectResult checks the JSON-RPC result with the same rule language as
+	// Extract; an empty expected value only requires the rule to evaluate.
+	ExpectResult map[string]string `yaml:"expect_result"`
+
+	// ExpectToolError makes a tool-level error (result.isError) the expected
+	// outcome of a tool call.
+	ExpectToolError bool `yaml:"expect_tool_error"`
 }
 
 // GRPCConfig describes gRPC calls — unary and streaming: each iteration makes

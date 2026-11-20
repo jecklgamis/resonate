@@ -11,7 +11,7 @@ import (
 
 // scenarioSections are the protocol sections a scenario may carry; each one
 // inherits the file's top-level section of the same name.
-var scenarioSections = []string{"http", "ws", "grpc", "sse"}
+var scenarioSections = []string{"http", "ws", "grpc", "sse", "mcp"}
 
 // ScenarioSet is the ordered `scenarios:` map of a multi-scenario file. It
 // keeps the order the scenarios were written in (a Go map would not), which is
@@ -22,7 +22,7 @@ type ScenarioSet []ScenarioEntry
 //
 // A scenario is the same thing a single-scenario file is — its own protocol,
 // load profile and protocol section — plus StartAfter. Its protocol section
-// (http/ws/grpc/sse) is kept as written and merged over the file's top-level
+// (http/ws/grpc/sse/mcp) is kept as written and merged over the file's top-level
 // section of the same name by Scenario.Resolve; the merge is by top-level
 // key, so a key set in the scenario replaces the shared one outright (lists
 // and maps are not combined).
@@ -30,7 +30,7 @@ type ScenarioEntry struct {
 	Name string
 
 	// Protocol overrides the file's protocol for this scenario ("http", "ws",
-	// "grpc" or "sse"); empty means the file's.
+	// "grpc", "sse" or "mcp"); empty means the file's.
 	Protocol string
 
 	// StartAfter delays this scenario's start relative to the run's start
@@ -90,7 +90,7 @@ func (ss *ScenarioSet) UnmarshalYAML(node *yaml.Node) error {
 				err = v.Decode(&e.StartAfter)
 			case "load":
 				err = decodeStrict(v, &e.Load)
-			case "http", "ws", "grpc", "sse":
+			case "http", "ws", "grpc", "sse", "mcp":
 				if v.Kind != yaml.MappingNode {
 					return fmt.Errorf("line %d: scenario %q: %s must be a mapping", v.Line, name, k.Value)
 				}
@@ -169,7 +169,7 @@ func (s *Scenario) Resolve() ([]ResolvedScenario, error) {
 		return nil, fmt.Errorf("a file with scenarios: sets load inside each scenario; the top-level load: is not used")
 	}
 
-	shared := map[string]any{"http": s.HTTP, "ws": s.WS, "grpc": s.GRPC, "sse": s.SSE}
+	shared := map[string]any{"http": s.HTTP, "ws": s.WS, "grpc": s.GRPC, "sse": s.SSE, "mcp": s.MCP}
 	resolved := make([]ResolvedScenario, 0, len(s.Scenarios))
 	for _, e := range s.Scenarios {
 		proto := e.Protocol
@@ -180,7 +180,7 @@ func (s *Scenario) Resolve() ([]ResolvedScenario, error) {
 			proto = "http"
 		}
 		if !slices.Contains(scenarioSections, proto) {
-			return nil, fmt.Errorf("scenario %q: unsupported protocol %q (expected \"http\", \"ws\", \"grpc\" or \"sse\")", e.Name, proto)
+			return nil, fmt.Errorf("scenario %q: unsupported protocol %q (expected \"http\", \"ws\", \"grpc\", \"sse\" or \"mcp\")", e.Name, proto)
 		}
 		for sec := range e.sections {
 			if sec != proto {
@@ -206,6 +206,8 @@ func (s *Scenario) Resolve() ([]ResolvedScenario, error) {
 			target = &cfg.GRPC
 		case "sse":
 			target = &cfg.SSE
+		case "mcp":
+			target = &cfg.MCP
 		}
 		if err := mergeSection(shared[proto], e.sections[proto], target); err != nil {
 			return nil, fmt.Errorf("scenario %q: %s: %w", e.Name, proto, err)

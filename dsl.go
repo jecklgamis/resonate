@@ -59,6 +59,13 @@ type Scenario struct {
 	grpcOpts GRPCOptions
 	curCall  *GRPCCall
 
+	// mcp is non-nil once MCP is called, switching the Scenario to build an
+	// MCPGenerator. MCP is plain HTTP underneath, so it shares httpOpts with the
+	// HTTP modes; curMCP points at the MCPCall most recently appended by Tool,
+	// MCPList or MCPMethod, the MCP analogue of curCall. See dsl_mcp.go.
+	mcp    *MCPTarget
+	curMCP *MCPCall
+
 	// httpOnly records the HTTP-transport-only setters that were called
 	// (H2C, MaxIdleConns, ...), so Build can reject them on a WebSocket or
 	// gRPC scenario no matter which order they were called in.
@@ -249,6 +256,12 @@ func (s *Scenario) Delete(url string) *Scenario { return s.Method("DELETE", url)
 // name are reported together. It has no meaning for a WebSocket scenario,
 // which isn't broken down by step; calling it after WS is a Build/Run error.
 func (s *Scenario) Name(name string) *Scenario {
+	if s.mcp != nil {
+		if s.requireMCPCall("Name") {
+			s.curMCP.Name = name
+		}
+		return s
+	}
 	if p := s.nonHTTPStepProtocol(); p != "" {
 		s.deferErr(fmt.Errorf("resonate: Name(%q): a %s scenario has no per-step breakdown", name, p))
 		return s
@@ -264,6 +277,13 @@ func (s *Scenario) Name(name string) *Scenario {
 func (s *Scenario) Header(key, value string) *Scenario {
 	if s.grpc != nil {
 		s.deferErr(fmt.Errorf("resonate: Header(%q): gRPC sends metadata, not headers — use Metadata", key))
+		return s
+	}
+	if s.mcp != nil {
+		if s.mcp.Header == nil {
+			s.mcp.Header = map[string]string{}
+		}
+		s.mcp.Header[key] = value
 		return s
 	}
 	if s.ws != nil {
@@ -396,6 +416,10 @@ func (s *Scenario) ExpectBody(rule, value string) *Scenario {
 	if s.grpc != nil {
 		return s.grpcExpectBody(rule, value)
 	}
+	if s.mcp != nil {
+		s.deferErr(fmt.Errorf("resonate: ExpectBody doesn't apply to an MCP scenario — use ExpectResult"))
+		return s
+	}
 	s.ensureCurrent()
 	if s.cur.expectBody == nil {
 		s.deferErr(fmt.Errorf("resonate: ExpectBody doesn't apply to %s", s.describeMode()))
@@ -427,6 +451,9 @@ func (s *Scenario) Extract(name, rule string) *Scenario {
 	}
 	if s.grpc != nil {
 		return s.grpcExtract(name, rule)
+	}
+	if s.mcp != nil {
+		return s.mcpExtract(name, rule)
 	}
 	s.ensureCurrent()
 	if s.cur.extract == nil {
@@ -663,8 +690,8 @@ func (s *Scenario) Binary() *Scenario {
 // itself (e.g. to pass to their own retry/orchestration logic) rather than
 // calling Run directly. Returns an *HTTPGenerator if the Scenario only
 // used Target (or the default single implicit target), an *FlowGenerator
-// if it used Step/Setup, or a *WSGenerator / *SSEGenerator / *GRPCGenerator
-// after WS / SSE / GRPC. A Scenario is one protocol: mixing them is an error.
+// if it used Step/Setup, or a *WSGenerator / *SSEGenerator / *GRPCGenerator /
+// *MCPGenerator after WS / SSE / GRPC / MCP. A Scenario is one protocol: mixing them is an error.
 func (s *Scenario) Build() (Generator, error) {
 	if s.buildErr != nil {
 		return nil, s.buildErr
@@ -690,12 +717,14 @@ func (s *Scenario) Build() (Generator, error) {
 	case s.grpc != nil:
 		s.grpcOpts.Identities = s.identities
 		return NewGRPCGenerator(*s.grpc, s.grpcOpts)
+	case s.mcp != nil:
+		return NewMCPGenerator(*s.mcp, MCPOptions{HTTP: s.httpOpts, Identities: s.identities})
 	}
 	if isFlow {
 		return NewFlowGenerator(s.flow, s.setup, FlowOptions{HTTP: s.httpOpts, Identities: s.identities})
 	}
 	if len(s.targets) == 0 {
-		return nil, fmt.Errorf("resonate: scenario has no request configured (call Get/Post/Target/Step/Setup/WS/SSE/GRPC first)")
+		return nil, fmt.Errorf("resonate: scenario has no request configured (call Get/Post/Target/Step/Setup/WS/SSE/GRPC/MCP first)")
 	}
 	return NewHTTPGenerator(s.targets, s.httpOpts)
 }
@@ -723,7 +752,7 @@ func (s *Scenario) Run(ctx context.Context) (Summary, error) {
 // hasRequests reports whether a request, step, message, stream or call has been
 // started on the Scenario — what Suite.Defaults must not do.
 func (s *Scenario) hasRequests() bool {
-	return len(s.targets) > 0 || len(s.flow) > 0 || len(s.setup) > 0 || s.ws != nil || s.sse != nil || s.grpc != nil
+	return len(s.targets) > 0 || len(s.flow) > 0 || len(s.setup) > 0 || s.ws != nil || s.sse != nil || s.grpc != nil || s.mcp != nil
 }
 
 // prepare builds the Scenario's Generator and the Options to run it with —

@@ -38,5 +38,5 @@ resonate compare <baseline.json> <current.json> [flags]
 
 ### SEE ALSO
 
-* [resonate](resonate.md)	 - Load test HTTP, WebSocket, gRPC and SSE services
+* [resonate](resonate.md)	 - Load test HTTP, WebSocket, gRPC, SSE and MCP services
 
