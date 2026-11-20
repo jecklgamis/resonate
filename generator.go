@@ -9,7 +9,7 @@ type Result = generator.Result
 
 // Generator performs one unit of work ("iteration") and reports the result
 // of each call it made. See the implementations below (HTTPGenerator,
-// FlowGenerator, WSGenerator, GRPCGenerator, SSEGenerator) and their
+// FlowGenerator, WSGenerator, GRPCGenerator, SSEGenerator, MCPGenerator) and their
 // constructors.
 type Generator = generator.Generator
 
@@ -144,6 +144,39 @@ func DefaultSSEOptions() SSEOptions { return generator.DefaultSSEOptions() }
 // NewSSEGenerator builds a Generator that opens target fresh every iteration.
 func NewSSEGenerator(target SSETarget, opts SSEOptions) (*SSEGenerator, error) {
 	return generator.NewSSEGenerator(target, opts)
+}
+
+// --- MCP: JSON-RPC sessions against a Model Context Protocol server ---
+
+// MCPTarget describes an MCP server reached over the streamable HTTP
+// transport and the calls each iteration makes on a virtual user's session.
+// See the field docs for the session lifecycle and failure rules.
+type MCPTarget = generator.MCPTarget
+
+// MCPCall is one JSON-RPC request an MCP session makes each iteration: a tool
+// call, a list (tools, resources or prompts) or any other method.
+type MCPCall = generator.MCPCall
+
+// MCPOptions configures the transport (via its HTTP field, so Timeout,
+// Insecure, H2C, etc. apply) and per-virtual-user identities.
+type MCPOptions = generator.MCPOptions
+
+// MCPGenerator drives one MCP session per virtual user and reports one Result
+// per JSON-RPC request, with session setup as its own steps.
+type MCPGenerator = generator.MCPGenerator
+
+// MCPDefaultProtocolVersion is the MCP protocol revision announced in
+// initialize when MCPTarget.ProtocolVersion is empty.
+const MCPDefaultProtocolVersion = generator.MCPDefaultProtocolVersion
+
+// DefaultMCPOptions returns MCPOptions with resonate's usual defaults (30s
+// timeout, redirects followed).
+func DefaultMCPOptions() MCPOptions { return generator.DefaultMCPOptions() }
+
+// NewMCPGenerator builds a Generator that opens an MCP session per virtual
+// user and makes target.Calls on it every iteration.
+func NewMCPGenerator(target MCPTarget, opts MCPOptions) (*MCPGenerator, error) {
+	return generator.NewMCPGenerator(target, opts)
 }
 
 // --- Feeders: CSV/JSON-driven request data ---

@@ -227,6 +227,9 @@ func TestResolveRejectsBadFiles(t *testing.T) {
 		{"negative start_after", "scenarios:\n  a:\n    start_after: -1s\n" + ok, "must not be negative"},
 		{"unsupported protocol", "scenarios:\n  a:\n    protocol: smtp\n" + ok, `unsupported protocol "smtp"`},
 		{"section for another protocol", "scenarios:\n  a:\n    protocol: http\n    load: {duration: 1s}\n    ws: {url: \"ws://h\"}\n", "has a ws section but its protocol is http"},
+		{"mcp section on an http scenario", "scenarios:\n  a:\n    protocol: http\n    load: {duration: 1s}\n    mcp: {url: \"http://h/mcp\"}\n", "has a mcp section but its protocol is http"},
+		{"unknown key in an mcp section", "scenarios:\n  a:\n    protocol: mcp\n    load: {duration: 1s}\n    mcp: {url: \"http://h/mcp\", callz: []}\n", "callz"},
+		{"unknown key in an mcp call", "scenarios:\n  a:\n    protocol: mcp\n    load: {duration: 1s}\n    mcp:\n      url: \"http://h/mcp\"\n      calls: [{tool: add, argumentz: {}}]\n", "argumentz"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -280,7 +283,7 @@ func TestSchemaPartialSectionsMirrorStrictOnes(t *testing.T) {
 	if err := json.Unmarshal([]byte(ScenarioSchema()), &schema); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"http", "websocket", "grpc", "sse"} {
+	for _, name := range []string{"http", "websocket", "grpc", "sse", "mcp"} {
 		strict, partial := schema.Defs[name], schema.Defs[name+"Partial"]
 		if len(strict.Properties) == 0 {
 			t.Fatalf("$defs.%s has no properties", name)
@@ -357,4 +360,43 @@ func TestScenarioSurvivesAMarshalRoundTrip(t *testing.T) {
 			t.Errorf("order lost: %v", back.Scenarios.Names())
 		}
 	})
+}
+
+// An mcp scenario merges the shared mcp section like every other protocol, and
+// its calls list is replaced (not concatenated) by the scenario's own.
+func TestResolveMCPScenarioMergesSharedSection(t *testing.T) {
+	s := loadScenarios(t, `
+mcp:
+  url: http://shared/mcp
+  timeout: 4s
+  headers: {Authorization: "Bearer shared"}
+  calls:
+    - {list: tools}
+scenarios:
+  reads:
+    protocol: mcp
+    load: {duration: 1s, workers: 1}
+  writes:
+    protocol: mcp
+    load: {duration: 1s, workers: 1}
+    mcp:
+      timeout: 9s
+      calls:
+        - {tool: add, arguments: {a: 1, b: 2}}
+        - {tool: echo, arguments: '{"message": "{{.VU}}"}'}
+`)
+	r, err := s.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reads, writes := r[0].Config, r[1].Config
+	if reads.Protocol != "mcp" || reads.MCP.URL != "http://shared/mcp" || reads.MCP.Timeout != "4s" || len(reads.MCP.Calls) != 1 || reads.MCP.Calls[0].List != "tools" {
+		t.Errorf("reads inherited the shared section wrongly: %+v", reads.MCP)
+	}
+	if writes.MCP.URL != "http://shared/mcp" || writes.MCP.Timeout != "9s" || writes.MCP.Headers["Authorization"] != "Bearer shared" {
+		t.Errorf("writes = %+v; it should inherit url and headers and override timeout", writes.MCP)
+	}
+	if len(writes.MCP.Calls) != 2 || writes.MCP.Calls[0].List != "" {
+		t.Errorf("writes calls = %+v; the scenario's list replaces the shared one", writes.MCP.Calls)
+	}
 }

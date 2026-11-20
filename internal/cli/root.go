@@ -9,8 +9,8 @@ func NewRootCommand(version string) *cobra.Command {
 	buildVersion = version
 	root := &cobra.Command{
 		Use:   "resonate",
-		Short: "Load test HTTP, WebSocket, gRPC and SSE services",
-		Long: "resonate drives configurable load against HTTP, WebSocket, gRPC and Server-Sent Events targets.\n\n" +
+		Short: "Load test HTTP, WebSocket, gRPC, SSE and MCP services",
+		Long: "resonate drives configurable load against HTTP, WebSocket, gRPC, Server-Sent Events and MCP targets.\n\n" +
 			"Quick start:\n" +
 			"  resonate hit https://example.com --duration 2s\n" +
 			"  resonate run scenario.yaml",

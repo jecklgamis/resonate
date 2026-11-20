@@ -8,7 +8,7 @@
   "properties": {
     "protocol": {
       "type": "string",
-      "enum": ["http", "ws", "grpc", "sse"],
+      "enum": ["http", "ws", "grpc", "sse", "mcp"],
       "default": "http",
       "description": "Scenario protocol. Defaults to HTTP."
     },
@@ -27,6 +27,9 @@
     "sse": {
       "$ref": "#/$defs/ssePartial"
     },
+    "mcp": {
+      "$ref": "#/$defs/mcpPartial"
+    },
     "assertions": {
       "type": "array",
       "items": {
@@ -36,7 +39,7 @@
     "scenarios": {
       "type": "object",
       "minProperties": 1,
-      "description": "Named scenarios that run concurrently, each with its own load profile. The top-level http/ws/grpc/sse sections then hold defaults each scenario of that protocol inherits (a key a scenario sets replaces the shared one), and the top-level load must not be set.",
+      "description": "Named scenarios that run concurrently, each with its own load profile. The top-level http/ws/grpc/sse/mcp sections then hold defaults each scenario of that protocol inherits (a key a scenario sets replaces the shared one), and the top-level load must not be set.",
       "additionalProperties": {
         "$ref": "#/$defs/scenario"
       }
@@ -73,6 +76,9 @@
           },
           "sse": {
             "$ref": "#/$defs/sse"
+          },
+          "mcp": {
+            "$ref": "#/$defs/mcp"
           }
         }
       }
@@ -102,6 +108,9 @@
               },
               {
                 "required": ["sse"]
+              },
+              {
+                "required": ["mcp"]
               }
             ]
           }
@@ -127,6 +136,9 @@
                 },
                 {
                   "required": ["sse"]
+                },
+                {
+                  "required": ["mcp"]
                 }
               ]
             }
@@ -152,24 +164,59 @@
                   },
                   {
                     "required": ["grpc"]
+                  },
+                  {
+                    "required": ["mcp"]
                   }
                 ]
               }
             },
             "else": {
-              "required": ["http"],
-              "not": {
-                "anyOf": [
-                  {
-                    "required": ["ws"]
-                  },
-                  {
-                    "required": ["grpc"]
-                  },
-                  {
-                    "required": ["sse"]
+              "if": {
+                "properties": {
+                  "protocol": {
+                    "const": "mcp"
                   }
-                ]
+                },
+                "required": ["protocol"]
+              },
+              "then": {
+                "required": ["mcp"],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["http"]
+                    },
+                    {
+                      "required": ["ws"]
+                    },
+                    {
+                      "required": ["grpc"]
+                    },
+                    {
+                      "required": ["sse"]
+                    }
+                  ]
+                }
+              },
+              "else": {
+                "required": ["http"],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["ws"]
+                    },
+                    {
+                      "required": ["grpc"]
+                    },
+                    {
+                      "required": ["sse"]
+                    },
+                    {
+                      "required": ["mcp"]
+                    }
+                  ]
+                }
               }
             }
           }
@@ -910,6 +957,145 @@
       },
       "required": ["url"]
     },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An MCP (Model Context Protocol) server over the streamable HTTP transport. Every virtual user opens one session (initialize + notifications/initialized) and each iteration makes the calls in order over it.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^(https?://|\\{\\{)",
+          "description": "The MCP endpoint (streamable HTTP); supports templates."
+        },
+        "headers": {
+          "$ref": "#/$defs/stringMap",
+          "description": "Headers sent on every request, for example Authorization."
+        },
+        "protocol_version": {
+          "type": "string",
+          "description": "MCP protocol version announced in initialize; defaults to 2025-06-18."
+        },
+        "client_info": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "clientInfo announced in initialize.",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "calls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/mcpCall"
+          }
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration",
+          "description": "Bounds one whole JSON-RPC exchange, including reading an event-stream reply."
+        },
+        "insecure": {
+          "type": "boolean"
+        },
+        "max_response_body": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum bytes read per reply; 0 means a 16 MiB safety cap."
+        },
+        "cert_file": {
+          "type": "string"
+        },
+        "key_file": {
+          "type": "string"
+        },
+        "ca_file": {
+          "type": "string"
+        },
+        "h2c": {
+          "type": "boolean",
+          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options and http3."
+        },
+        "http3": {
+          "type": "boolean",
+          "description": "Use HTTP/3 (QUIC over UDP). The url must be https://. Mutually exclusive with h2c."
+        }
+      },
+      "required": ["url", "calls"]
+    },
+    "mcpCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One JSON-RPC request each iteration: exactly one of tool, list or method.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Label for this call in the report's per-step breakdown and step-scoped assertions; defaults to the tool name, the method, or \"<kind>/list\". The names initialize and initialized are reserved for session setup."
+        },
+        "tool": {
+          "type": "string",
+          "description": "Call this tool (tools/call)."
+        },
+        "arguments": {
+          "type": ["object", "string"],
+          "description": "The tool's arguments: a mapping (string values are templated and render as JSON strings) or a string holding a raw JSON document, itself a template \u2014 use that form for a templated number or boolean. Only with tool."
+        },
+        "list": {
+          "type": "string",
+          "enum": ["tools", "resources", "prompts"],
+          "description": "List tools, resources or prompts (tools/list, ...)."
+        },
+        "method": {
+          "type": "string",
+          "description": "Send this JSON-RPC method (any method not covered by tool or list)."
+        },
+        "params": {
+          "type": ["object", "array", "string"],
+          "description": "The method's params, in the same forms as arguments. Only with method."
+        },
+        "extract": {
+          "$ref": "#/$defs/stringMap",
+          "description": "Extract JSON-RPC result values for later calls (json:, yaml:, xml: or regex: rules)."
+        },
+        "expect_result": {
+          "$ref": "#/$defs/stringMap",
+          "description": "Check the JSON-RPC result with the same rules as extract; an empty value only requires the rule to evaluate."
+        },
+        "expect_tool_error": {
+          "type": "boolean",
+          "description": "Make a tool-level error (result.isError) the expected outcome. Only with tool."
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["tool"]
+        },
+        {
+          "required": ["list"]
+        },
+        {
+          "required": ["method"]
+        }
+      ],
+      "dependentRequired": {
+        "arguments": ["tool"],
+        "params": ["method"],
+        "expect_tool_error": ["tool"]
+      }
+    },
     "wsMessage": {
       "type": "object",
       "additionalProperties": false,
@@ -1382,6 +1568,84 @@
         }
       }
     },
+    "mcpPartial": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Like mcp, but with nothing required: a default shared by the scenarios of a file with scenarios:, or one scenario's overrides of it. A scenario's merged section is checked when the scenario is built.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^(https?://|\\{\\{)",
+          "description": "The MCP endpoint (streamable HTTP); supports templates."
+        },
+        "headers": {
+          "$ref": "#/$defs/stringMap",
+          "description": "Headers sent on every request, for example Authorization."
+        },
+        "protocol_version": {
+          "type": "string",
+          "description": "MCP protocol version announced in initialize; defaults to 2025-06-18."
+        },
+        "client_info": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "clientInfo announced in initialize.",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "calls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/mcpCall"
+          }
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        },
+        "feeder": {
+          "$ref": "#/$defs/feeder"
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration",
+          "description": "Bounds one whole JSON-RPC exchange, including reading an event-stream reply."
+        },
+        "insecure": {
+          "type": "boolean"
+        },
+        "max_response_body": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum bytes read per reply; 0 means a 16 MiB safety cap."
+        },
+        "cert_file": {
+          "type": "string"
+        },
+        "key_file": {
+          "type": "string"
+        },
+        "ca_file": {
+          "type": "string"
+        },
+        "h2c": {
+          "type": "boolean",
+          "description": "Use prior-knowledge HTTP/2 over plaintext; mutually exclusive with TLS options and http3."
+        },
+        "http3": {
+          "type": "boolean",
+          "description": "Use HTTP/3 (QUIC over UDP). The url must be https://. Mutually exclusive with h2c."
+        }
+      }
+    },
     "scenario": {
       "type": "object",
       "additionalProperties": false,
@@ -1396,7 +1660,8 @@
             "http",
             "ws",
             "grpc",
-            "sse"
+            "sse",
+            "mcp"
           ],
           "description": "This scenario's protocol; defaults to the file's protocol (itself defaulting to http)."
         },
@@ -1418,6 +1683,9 @@
         },
         "sse": {
           "$ref": "#/$defs/ssePartial"
+        },
+        "mcp": {
+          "$ref": "#/$defs/mcpPartial"
         }
       }
     }

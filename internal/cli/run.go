@@ -254,8 +254,10 @@ func buildGenerator(s *config.Scenario) (generator.Generator, error) {
 		return buildGRPCGenerator(s.GRPC)
 	case "sse":
 		return buildSSEGenerator(s.SSE)
+	case "mcp":
+		return buildMCPGenerator(s.MCP)
 	default:
-		return nil, fmt.Errorf("unsupported protocol %q (expected \"http\", \"ws\", \"grpc\" or \"sse\")", s.Protocol)
+		return nil, fmt.Errorf("unsupported protocol %q (expected \"http\", \"ws\", \"grpc\", \"sse\" or \"mcp\")", s.Protocol)
 	}
 }
 
@@ -592,6 +594,63 @@ func buildSSEGenerator(cfg config.SSEConfig) (generator.Generator, error) {
 		Compress: cfg.Compress,
 		Events:   cfg.Events,
 		Duration: duration,
+	}, opts)
+}
+
+func buildMCPGenerator(cfg config.MCPConfig) (generator.Generator, error) {
+	if cfg.URL == "" {
+		return nil, fmt.Errorf("mcp.url is required")
+	}
+	if len(cfg.Calls) == 0 {
+		return nil, fmt.Errorf("mcp.calls needs at least one call")
+	}
+
+	opts := generator.DefaultMCPOptions()
+	if cfg.Timeout != "" {
+		d, err := time.ParseDuration(cfg.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid mcp.timeout: %w", err)
+		}
+		opts.HTTP.Timeout = d
+	}
+	opts.HTTP.Insecure = cfg.Insecure
+	opts.HTTP.MaxResponseBody = cfg.MaxResponseBody
+	opts.HTTP.CertFile = cfg.CertFile
+	opts.HTTP.KeyFile = cfg.KeyFile
+	opts.HTTP.CAFile = cfg.CAFile
+	opts.HTTP.H2C = cfg.H2C
+	opts.HTTP.HTTP3 = cfg.HTTP3
+	opts.Identities = cfg.Identities
+
+	if cfg.Feeder.Configured() {
+		f, err := newFeeder(cfg.Feeder)
+		if err != nil {
+			return nil, fmt.Errorf("mcp.feeder: %w", err)
+		}
+		opts.HTTP.Feeder = f
+	}
+
+	calls := make([]generator.MCPCall, 0, len(cfg.Calls))
+	for _, c := range cfg.Calls {
+		calls = append(calls, generator.MCPCall{
+			Name:            c.Name,
+			Tool:            c.Tool,
+			Arguments:       c.Arguments,
+			List:            c.List,
+			Method:          c.Method,
+			Params:          c.Params,
+			Extract:         c.Extract,
+			ExpectResult:    c.ExpectResult,
+			ExpectToolError: c.ExpectToolError,
+		})
+	}
+	return generator.NewMCPGenerator(generator.MCPTarget{
+		URL:             cfg.URL,
+		Header:          cfg.Headers,
+		Calls:           calls,
+		ProtocolVersion: cfg.ProtocolVersion,
+		ClientName:      cfg.ClientInfo.Name,
+		ClientVersion:   cfg.ClientInfo.Version,
 	}, opts)
 }
 
