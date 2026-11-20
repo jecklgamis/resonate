@@ -33,6 +33,20 @@ example-sse-server:
 example-mcp-server:
 	go run ./examples/testmcpserver $(ARGS)
 
+# The MCP example server built on the official Python SDK
+# (examples/pythonmcpserver), someone else's implementation of the protocol to
+# check resonate against. Needs uv. Pass flags with ARGS, e.g.
+# ARGS=--json-response, ARGS=--stateless.
+.PHONY: example-python-mcp-server
+example-python-mcp-server:
+	uv run examples/pythonmcpserver/server.py $(ARGS)
+
+# Run resonate against that server in every combination of reply format and
+# statefulness the SDK offers. Opt-in: it needs uv and, the first time, a network.
+.PHONY: test-mcp-interop
+test-mcp-interop:
+	RESONATE_MCP_INTEROP=1 go test ./examples/pythonmcpserver/ -count=1 -v
+
 # The HTTP/3 example server (examples/testhttp3server), a target for trying
 # examples/http-http3.yaml and examples/sse-http3.yaml. Pass flags with ARGS,
 # e.g. ARGS=-h3-only.

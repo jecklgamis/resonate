@@ -1,8 +1,8 @@
 # Test the error paths on purpose. A tool that ran and failed returns a normal
 # JSON-RPC result with isError: true; resonate reports that as a failure unless
 # the call says `expect_tool_error: true`, in which case it passes and a call
-# that unexpectedly succeeds fails. (A JSON-RPC error, such as an unknown tool,
-# is always a failure.)
+# that unexpectedly succeeds fails. (A JSON-RPC error is always a failure; whether
+# a server reports an unknown tool that way or as a tool error is its own choice.)
 #
 #   make example-mcp-server
 #   resonate run examples/mcp-errors.yaml --dry-run

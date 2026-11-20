@@ -15,6 +15,8 @@ go run ./cmd/resonate hit http://localhost:8080/health --duration 5s
 make example-grpc-server   # :50051 (ARGS=-reflection=false)
 make example-sse-server    # :8765
 make example-mcp-server    # :8766 (ARGS=-sse for event-stream replies, ARGS=-session-ttl=10s)
+make example-python-mcp-server  # :8767, official Python SDK, needs uv (ARGS=--json-response / --stateless)
+make test-mcp-interop      # opt-in: resonate vs that server in all four variants (needs uv + network)
 make example-http3-server  # :8443 UDP+TCP (ARGS=-h3-only)
 ```
 
