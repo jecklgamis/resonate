@@ -3,7 +3,7 @@
 Scenario files (`resonate run <scenario.yaml>`) describe multi-target or
 reusable load tests in YAML. This page covers `http.targets`/`http.flow`,
 base URLs, feeders, identities, control flow, WebSocket, Server-Sent Events,
-gRPC, and assertions —
+gRPC, MCP, and assertions —
 see [Execution Models](execution-models.md) for the `load:` block
 (`rate`, `workers`, `stages`, `iterations`), and
 [Multiple Scenarios](multiple-scenarios.md) to run several workloads at once, each with
@@ -58,13 +58,13 @@ http:
 A `url` that doesn't start with `/` (already absolute, or a `{{ }}`
 template) is left untouched; a relative `url` with no `base_url` set
 fails fast at construction, same as a malformed absolute URL. Only
-`targets`/`flow`/`setup` resolve against `base_url` — `ws` and `grpc`
+`targets`/`flow`/`setup` resolve against `base_url` — `ws`, `grpc` and `mcp`
 scenarios don't. See
 [`examples/http-base-url.yaml`](https://github.com/jecklgamis/resonate/blob/main/examples/http-base-url.yaml).
 
 ## Feeders
 
-`http.feeder` (and `ws.feeder`, `sse.feeder`, `grpc.feeder`) hands out one row of data per
+`http.feeder` (and `ws.feeder`, `sse.feeder`, `grpc.feeder`, `mcp.feeder`) hands out one row of data per
 iteration, exposed to templates as `{{.Feeder.<column>}}`, for replaying a real dataset instead of
 random values. The rows come from a CSV or JSON file, or from a Kafka topic:
 

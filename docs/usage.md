@@ -5,7 +5,7 @@
 | | `resonate hit <url>` (CLI) | `resonate run <scenario.yaml>` (YAML) |
 | --- | --- | --- |
 | Input | CLI flags | YAML scenario file |
-| Protocol | HTTP only | HTTP, WebSocket (`protocol: ws`), Server-Sent Events (`protocol: sse`) or gRPC (`protocol: grpc`) |
+| Protocol | HTTP only | HTTP, WebSocket (`protocol: ws`), Server-Sent Events (`protocol: sse`), gRPC (`protocol: grpc`) or MCP (`protocol: mcp`) |
 | Targets | One URL | Multiple targets (round-robin), or a multi-step `flow` |
 | State across requests | None | `flow` supports response chaining (`{{.Vars.*}}`) and per-VU `identities` |
 | Setup steps | Not available | `http.setup` — runs once per VU before its first iteration |
@@ -90,9 +90,9 @@ See [`examples/http-basic.yaml`](https://github.com/jecklgamis/resonate/blob/mai
 
 `protocol:` selects what the scenario drives: `http` (the default),
 `ws` ([WebSocket](scenarios.md#websocket)), `sse`
-([Server-Sent Events guide](sse.md)) or `grpc` (the
-[gRPC guide](grpc.md)). The `load:` block and `assertions:` are the same for all
-four. To run several workloads at the same time, each with its own `load:`, put them under
+([Server-Sent Events guide](sse.md)), `grpc` (the
+[gRPC guide](grpc.md)) or `mcp` (the [MCP guide](mcp.md)). The `load:` block and
+`assertions:` are the same for all five. To run several workloads at the same time, each with its own `load:`, put them under
 `scenarios:` instead; see [Multiple Scenarios](multiple-scenarios.md).
 
 ## Request Templating
@@ -262,6 +262,12 @@ Both commands fail fast, before any request is sent, on:
 - For `protocol: sse`: a missing `url`, or one that isn't an absolute
   `scheme://host` URL; a negative `events` or `duration`; and an unparseable
   `duration` or `timeout`.
+- For `protocol: mcp`: a missing `url` or `calls`; a call that sets none or more than
+  one of `tool`, `list` and `method`, or `arguments`/`params`/`expect_tool_error` on the
+  wrong kind of call; a step name that is reserved for session setup (`initialize`,
+  `initialized`); an `extract`/`expect_result` rule that cannot apply to a JSON-RPC result
+  (`header:`, `status`, `css:`); `arguments` that are not valid JSON; and an
+  unparseable `timeout`. See the [MCP guide](mcp.md).
 - For `protocol: grpc`: a missing `address` or `calls`; a `method` that
   isn't `package.Service/Method`, or isn't in the schema (the error lists
   the methods the service does have); a request message that doesn't parse

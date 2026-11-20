@@ -1,0 +1,30 @@
+# Beyond tool calls: list what a server offers and send any other JSON-RPC
+# method with `method:` and `params:`. A call with no `name:` is reported under
+# its method ("tools/list", "ping", ...); `name:` gives it a friendlier label.
+#
+#   make example-mcp-server
+#   resonate run examples/mcp-explore.yaml --dry-run
+protocol: mcp
+
+load:
+  duration: 10s
+  rate: 20
+  workers: 5
+
+mcp:
+  url: http://localhost:8766/mcp
+  calls:
+    - list: tools
+      expect_result:
+        json:tools[0].name: add
+
+    - list: resources
+    - list: prompts
+
+    - method: resources/read
+      name: read-demo
+      params: {uri: "file:///demo.txt"}
+      expect_result:
+        json:contents[0].text: hello from the example MCP server
+
+    - method: ping

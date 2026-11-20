@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/jecklgamis/resonate/actions/workflows/ci.yml/badge.svg)](https://github.com/jecklgamis/resonate/actions/workflows/ci.yml)
 
-A load generator for HTTP (including HTTP/3), WebSocket, Server-Sent Events and gRPC: `resonate hit <url>`
+A load generator for HTTP (including HTTP/3), WebSocket, Server-Sent Events, gRPC and MCP: `resonate hit <url>`
 for quick, flag-driven one-off runs, `resonate run <scenario.yaml>` for
-reusable multi-target/multi-step/WebSocket/SSE/gRPC scenarios, and the same
+reusable multi-target/multi-step/WebSocket/SSE/gRPC/MCP scenarios, and the same
 engine as a Go library.
 
 > **Beta**: the scenario YAML schema, the `report.json` / `results.jsonl` formats and the exit codes are stable and versioned (see [Stability](docs/reports.md#stability)). Flags and features may still be added, and the Go library API may still change before 1.0.
@@ -84,10 +84,10 @@ resonate run scenario.yaml
 ```
 
 Every run writes a stdout summary plus `report.html`/`report.json`/
-`results.jsonl` by default. For multi-target/multi-step/WebSocket/SSE/gRPC
+`results.jsonl` by default. For multi-target/multi-step/WebSocket/SSE/gRPC/MCP
 scenarios in YAML, see [docs/usage.md](docs/usage.md) and
 [docs/scenarios.md](docs/scenarios.md); for gRPC (unary and streaming), the
-[gRPC guide](docs/grpc.md); for Server-Sent Events, the [SSE guide](docs/sse.md); for HTTP/3, the
+[gRPC guide](docs/grpc.md); for Server-Sent Events, the [SSE guide](docs/sse.md); for MCP servers, the [MCP guide](docs/mcp.md); for HTTP/3, the
 [HTTP/3 guide](docs/http3.md); to run several workloads at once, each with its own load profile, [multiple scenarios](docs/multiple-scenarios.md).
 
 ## Go library
