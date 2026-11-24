@@ -23,6 +23,8 @@ jobs:
             goarch: arm64
           - goos: windows
             goarch: amd64
+          - goos: windows
+            goarch: arm64
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
